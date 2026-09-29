@@ -1,0 +1,30 @@
+{
+  "name": "@odemehub/node-sdk",
+  "version": "1.0.0",
+  "description": "ödemehub ödeme geçidi için Node.js istemcisi.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/odemehub/node-sdk.git"
+  },
+  "homepage": "https://github.com/odemehub/node-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/odemehub/node-sdk/issues"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "^7.0.2"
+  }
+}
