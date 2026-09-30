@@ -140,7 +140,7 @@ await client.saveProduct({
     type: 'recurring',
     amount: '149.90',
     taxRate: '20',
-    period: 'monthly',       // monthly | yearly — yalnız recurring için zorunlu
+    period: 'monthly',       // monthly | annually — yalnız recurring için zorunlu
 });
 ```
 

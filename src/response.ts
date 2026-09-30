@@ -308,7 +308,7 @@ export class Product {
     declare readonly currency: string;
     /** The tax included in the price, as a percentage. */
     declare readonly taxRate: string;
-    /** monthly or yearly for a recurring product; null for a simple one. */
+    /** monthly or annually for a recurring product; null for a simple one. */
     declare readonly period: string | null;
     /** Whether it is on sale. */
     declare readonly isActive: boolean;
@@ -490,7 +490,7 @@ export class Subscription {
     declare readonly items: SubscriptionItem[];
     /** Where it stands: pending, active, past_due or cancelled. */
     declare readonly status: string;
-    /** How often a period comes round: monthly or yearly. */
+    /** How often a period comes round: monthly or annually. */
     declare readonly period: string;
     /** What the period it is on costs, with the kurus behind a point. */
     declare readonly amount: string;

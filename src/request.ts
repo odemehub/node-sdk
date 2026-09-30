@@ -314,7 +314,7 @@ export interface SaveProduct extends ChannelMessage {
     /** The tax included in the price, as a percentage, e.g. '20'. */
     taxRate: string;
     /** How often a recurring product comes round. Only a recurring product has one. */
-    period?: 'monthly' | 'yearly';
+    period?: 'monthly' | 'annually';
     /** Three letters, e.g. TRY. Left out, the gateway takes the lira. */
     currency?: string;
     /** Whether it is on sale. Left out, it is. */
