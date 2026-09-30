@@ -115,6 +115,7 @@ export function orderPayment(message: Request.OrderPayment, channelToken: string
                 items: message.items.map((item) => said({
                     channel_reference: item.channelReference,
                     name: item.name,
+                    image: item.image,
                     quantity: item.quantity,
                     unit_amount: item.unitAmount,
                     tax_rate: item.taxRate,
@@ -137,6 +138,7 @@ export function subscriptionPayment(message: Request.SubscriptionPayment, channe
                     channel_reference: item.channelReference,
                     quantity: item.quantity,
                     unit_amount: item.unitAmount,
+                    image: item.image,
                 })),
                 success_url: message.successUrl,
                 cancel_url: message.cancelUrl,
@@ -187,6 +189,7 @@ export function saveProduct(message: Request.SaveProduct, channelToken: string):
                 channel_token: message.channelToken ?? channelToken,
                 channel_reference: message.channelReference,
                 name: message.name,
+                image: message.image,
                 type: message.type,
                 amount: message.amount,
                 currency: message.currency,

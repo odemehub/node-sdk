@@ -156,6 +156,8 @@ export interface OrderItem {
     channelReference: string;
     /** Left out, the product's own name is shown. */
     name?: string;
+    /** The https address of the picture shown beside the line at checkout. Left out, the product's own picture is shown. */
+    image?: string;
     /** Left out, the line is for one. */
     quantity?: number;
     /** The price of one, as digits with the kurus behind a point. Left out, the product's own price is charged. */
@@ -208,6 +210,8 @@ export interface SubscriptionItem {
      * price too.
      */
     unitAmount?: string;
+    /** The https address of the picture shown at checkout for this line. Left out, the product's own picture is shown. */
+    image?: string;
 }
 
 /**
@@ -319,6 +323,11 @@ export interface SaveProduct extends ChannelMessage {
     currency?: string;
     /** Whether it is on sale. Left out, it is. */
     isActive?: boolean;
+    /**
+     * The https address of the picture the checkout shows it with. Left out,
+     * the product keeps the picture it has; an empty string takes it off.
+     */
+    image?: string;
 }
 
 /**

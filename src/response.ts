@@ -301,6 +301,8 @@ export class Product {
     /** The key the product is known by in the calling system. */
     declare readonly channelReference: string;
     declare readonly name: string;
+    /** The address of the picture the checkout shows it with, if it has one. */
+    declare readonly image: string | null;
     /** simple or recurring. */
     declare readonly type: string;
     /** The price of one, as digits with the kurus behind a point. */
@@ -325,6 +327,7 @@ export class Product {
             channelToken: string(product.channel_token),
             channelReference: string(product.channel_reference),
             name: string(product.name),
+            image: optionalString(product.image),
             type: string(product.type),
             amount: string(product.amount),
             currency: string(product.currency),
@@ -453,6 +456,8 @@ export class SubscriptionItem {
     /** The merchant's own key for the product. */
     declare readonly channelReference: string;
     declare readonly name: string;
+    /** The picture shown for the line: the one named when the subscription was opened, or else the product's. */
+    declare readonly image: string | null;
     declare readonly quantity: number;
     /** The price of one, as digits with the kurus behind a point. */
     declare readonly unitAmount: string;
@@ -467,6 +472,7 @@ export class SubscriptionItem {
         return new SubscriptionItem({
             channelReference: string(item.channel_reference),
             name: string(item.name),
+            image: optionalString(item.image),
             quantity: integer(item.quantity),
             unitAmount: string(item.unit_amount),
             taxRate: optionalString(item.tax_rate),
