@@ -250,43 +250,271 @@ export class GiveBack extends Payment {
 }
 
 /**
- * An order opened to be paid on the gateway's own page.
+ * A word the gateway sent about a payment the merchant started and the
+ * customer finished — or did not — at their bank. It is the same answer
+ * `retrievePayment` gives, with the state reached on top: the customer may
+ * have closed the page before their browser could bring the outcome back,
+ * and then this is the only word the merchant hears.
  */
-export class OrderPayment {
+export class TransactionWebhook extends Payment {
+    /** The state reached: successful, failed or expired. */
+    declare readonly event: string;
+
+    constructor(fields: Fields<TransactionWebhook>) {
+        super(fields);
+    }
+
+    /** Whether the payment went through. */
+    isSuccessful(): boolean {
+        return this.event === 'successful';
+    }
+
+    /** Whether the bank turned the payment away. */
+    isFailed(): boolean {
+        return this.event === 'failed';
+    }
+
+    /** Whether the customer never opened the bank's page in time, so the payment was closed without being tried. */
+    isExpired(): boolean {
+        return this.event === 'expired';
+    }
+
+    static override fromBody(body: Body): TransactionWebhook {
+        return new TransactionWebhook({
+            ...Payment.parts(body),
+            event: string(body.event),
+        });
+    }
+}
+
+/**
+ * One line of what an order is made up of, as it was written down when the
+ * order was opened.
+ */
+export class OrderItem {
+    /** The merchant's own key for what is on the line. */
+    declare readonly channelReference: string;
+    declare readonly name: string;
+    /** The picture the line is shown with, if any. */
+    declare readonly image: string | null;
+    declare readonly quantity: number;
+    /** The price of one, as digits with the kurus behind a point. */
+    declare readonly unitAmount: string;
+    /** The tax included in the price, as a percentage; null for a line with no rate. */
+    declare readonly taxRate: string | null;
+    /** The tax the line comes to; null for a line with no rate. */
+    declare readonly taxAmount: string | null;
+
+    constructor(fields: Fields<OrderItem>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(item: Body): OrderItem {
+        return new OrderItem({
+            channelReference: string(item.channel_reference),
+            name: string(item.name),
+            image: optionalString(item.image),
+            quantity: integer(item.quantity),
+            unitAmount: string(item.unit_amount),
+            taxRate: optionalString(item.tax_rate),
+            taxAmount: optionalString(item.tax_amount),
+        });
+    }
+}
+
+/**
+ * An order as the gateway keeps it: what is being paid for, what it comes
+ * to, where it stands and — once it is paid — the payment that paid it. The
+ * same answer comes back whether the order has just been opened, asked
+ * after, or the gateway is telling the merchant it was paid.
+ */
+export class Order {
     declare readonly result: Result;
-    /** The order's token in the gateway. */
+    /** The order's token in the gateway; name it to ask after it later. */
     declare readonly token: string;
     /** The channel the order was opened on. */
     declare readonly channelToken: string;
     /** The number the order is known by in the calling system. */
     declare readonly channelReference: string;
+    declare readonly description: string | null;
+    /** Where the order stands: open until it is paid, then paid. */
+    declare readonly status: string;
+    /** What the order is made up of. */
+    declare readonly items: OrderItem[];
+    /** What the lines come to before tax; null when no line carried a rate. */
+    declare readonly subtotal: string | null;
+    /** The tax the order carries; null when no line carried a rate. */
+    declare readonly taxAmount: string | null;
     /** What the order comes to, added up from its lines by the gateway. */
     declare readonly amount: string;
     declare readonly currency: string;
-    /** Where the order stands: open until it is paid. */
-    declare readonly status: string;
-    /** Where the customer has to be sent to pay. */
-    declare readonly checkoutUrl: string;
-    /** The merchant's own key for the customer the order is for. */
-    declare readonly customerChannelReference: string;
+    /** Whether it was paid in the test environment; null until it is paid. */
+    declare readonly isTest: boolean | null;
+    declare readonly createdAt: string | null;
+    /** Where the customer pays, while the order is still open; null once it is paid. */
+    declare readonly checkoutUrl: string | null;
+    /** The token of the payment that paid the order, which names it again for a refund; null while it is open. */
+    declare readonly transactionToken: string | null;
+    /** The merchant's own key for the customer the order is for; null for an order opened without one. */
+    declare readonly customerChannelReference: string | null;
 
-    constructor(fields: Fields<OrderPayment>) {
+    constructor(fields: Fields<Order>) {
         Object.assign(this, fields);
     }
 
-    static fromBody(body: Body): OrderPayment {
-        const order = object(body.order);
+    /** Whether the order has been paid. */
+    isPaid(): boolean {
+        return this.status === 'paid';
+    }
 
-        return new OrderPayment({
+    static fromBody(body: Body): Order {
+        const order = object(body.order);
+        const transaction = object(order.transaction);
+
+        return new Order({
             result: Result.fromBody(body),
             token: string(order.token),
             channelToken: string(order.channel_token),
             channelReference: string(order.channel_reference),
+            description: said(order.description),
+            status: string(order.status),
+            items: list(order.items).map((item) => OrderItem.fromBody(object(item))),
+            subtotal: said(order.subtotal),
+            taxAmount: said(order.tax_amount),
             amount: string(order.amount),
             currency: string(order.currency),
-            status: string(order.status),
-            checkoutUrl: string(order.checkout_url),
-            customerChannelReference: string(object(body.customer).channel_reference),
+            isTest: order.is_test === undefined || order.is_test === null ? null : boolean(order.is_test),
+            createdAt: said(order.created_at),
+            checkoutUrl: said(order.checkout_url),
+            transactionToken: said(transaction.token),
+            customerChannelReference: said(object(body.customer).channel_reference),
+        });
+    }
+}
+
+/**
+ * A word the gateway sent about one of the merchant's orders: that it was
+ * paid, with the payment that paid it. An order is only ever told of once;
+ * an attempt that fails leaves it open and the customer trying again.
+ */
+export class OrderWebhook {
+    /** The state reached: paid. */
+    declare readonly event: string;
+    /** The order as it stands now, with the payment that paid it. */
+    declare readonly order: Order;
+
+    constructor(fields: Fields<OrderWebhook>) {
+        Object.assign(this, fields);
+    }
+
+    /** Whether the order has been paid, which is the one thing said here. */
+    isPaid(): boolean {
+        return this.event === 'paid';
+    }
+
+    static fromBody(body: Body): OrderWebhook {
+        return new OrderWebhook({
+            event: string(body.event),
+            order: Order.fromBody(body),
+        });
+    }
+}
+
+/**
+ * One attempt at a payment, as the gateway lists it: enough to tell the
+ * attempts apart and see where each got to. Where it stands is said twice
+ * on purpose — the attempt's own state, and what became of the money, which
+ * can move on to refunded long after the attempt is over.
+ */
+export class Transaction {
+    /** The payment's token in the gateway, which names it again to ask after or give back. */
+    declare readonly token: string;
+    /** The channel the payment came in on. */
+    declare readonly channelToken: string;
+    /** The reference the payment was made under in the calling system. */
+    declare readonly channelReference: string;
+    /** The attempt's state: started, redirected_to_secure_page, returned_from_secure_page, failed, expired or successful. */
+    declare readonly status: string;
+    /** What became of the money: unpaid, paid, cancelled, refunded or partially_refunded. */
+    declare readonly paymentStatus: string;
+    /** How it was made: secure (confirmed at the bank) or regular. */
+    declare readonly securityType: string;
+    /** What the card was charged, with the kurus behind a point. */
+    declare readonly amount: string;
+    /** What was being sold, before anything added for instalments. */
+    declare readonly baseAmount: string;
+    declare readonly currency: string;
+    declare readonly installmentNumber: number;
+    /** Whether it was made in the test environment. */
+    declare readonly isTest: boolean;
+    /** What the provider called the refusal, for an attempt that failed. */
+    declare readonly errorCode: string | null;
+    /** Why it failed, written for a person. */
+    declare readonly errorMessage: string | null;
+    declare readonly createdAt: string | null;
+    /** The merchant's own key for the customer; null for a payer the merchant never named. */
+    declare readonly customerChannelReference: string | null;
+    /** What reached the card when it was charged in another money; null when charged as asked. */
+    declare readonly conversion: Conversion | null;
+    /** The token of the order this attempt was at, when it was at one. */
+    declare readonly orderToken: string | null;
+    /** The token of the subscription this attempt paid a period of, when it did. */
+    declare readonly subscriptionToken: string | null;
+
+    constructor(fields: Fields<Transaction>) {
+        Object.assign(this, fields);
+    }
+
+    /** Whether the attempt went through. */
+    isSuccessful(): boolean {
+        return this.status === 'successful';
+    }
+
+    static fromBody(transaction: Body): Transaction {
+        return new Transaction({
+            token: string(transaction.token),
+            channelToken: string(transaction.channel_token),
+            channelReference: string(transaction.channel_reference),
+            status: string(transaction.status),
+            paymentStatus: string(transaction.payment_status),
+            securityType: string(transaction.security_type),
+            amount: string(transaction.amount),
+            baseAmount: string(transaction.base_amount),
+            currency: string(transaction.currency),
+            installmentNumber: integer(transaction.installment_number) || 1,
+            isTest: boolean(transaction.is_test),
+            errorCode: said(transaction.error_code),
+            errorMessage: said(transaction.error_message),
+            createdAt: said(transaction.created_at),
+            customerChannelReference: said(object(transaction.customer).channel_reference),
+            conversion: transaction.conversion ? Conversion.fromBody(object(transaction.conversion)) : null,
+            orderToken: said(object(transaction.order).token),
+            subscriptionToken: said(object(transaction.subscription).token),
+        });
+    }
+}
+
+/**
+ * Every attempt made under one of the merchant's own numbers on a channel,
+ * oldest first, so they read as the attempts were made.
+ */
+export class Transactions {
+    declare readonly result: Result;
+    declare readonly transactions: Transaction[];
+
+    constructor(fields: Fields<Transactions>) {
+        Object.assign(this, fields);
+    }
+
+    /** The attempt that went through, if one did. */
+    successful(): Transaction | null {
+        return this.transactions.find((transaction) => transaction.isSuccessful()) ?? null;
+    }
+
+    static fromBody(body: Body): Transactions {
+        return new Transactions({
+            result: Result.fromBody(body),
+            transactions: list(body.transactions).map((transaction) => Transaction.fromBody(object(transaction))),
         });
     }
 }

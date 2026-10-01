@@ -84,6 +84,7 @@ const payment = await client.securePayment({
     installmentNumber: 1,
     ip: req.ip,
     callbackUrl: 'https://magazam.com/odeme/donus',
+    webhookUrl: 'https://magazam.com/odemehub/odeme',   // isteğe bağlı, aşağıya bakın
     customer,
     card,
 });
@@ -120,6 +121,50 @@ app.post('/odeme/donus', express.urlencoded({ extended: false }), async (req, re
 ```
 
 Neden böyle: o POST'u bizim sunucumuz değil, müşterinin tarayıcısı gönderir; tarayıcıya imzalayacak bir sır verilemez. `successful` alanına bakıp sipariş kapatmayın — onu herkes gönderebilir; yalnız "başarısız" ipucunda gereksiz sorgudan kaçınmak için kullanın. Geçide sorduğunuz yanıt ise her zaman imzalıdır ve SDK imzayı sizin için doğrular. Başkasının işlemini sorarsanız `ValidationError` alırsınız.
+
+### Ödeme bildirimi (webhook)
+
+Müşteri bankadan sonra sekmeyi kapatırsa tarayıcı `callbackUrl` adresinize hiç dönmez. Bunun için ödemeyi başlatırken `webhookUrl` verin: ödeme bankada bitince (ya da müşteri bankanın sayfasını hiç açmayıp süresi dolunca) geçidin **kendi sunucusu** o adrese imzalı bir POST gönderir. Gövde `retrievePayment()` yanıtının aynısıdır, üstüne hangi duruma gelindiğini söyleyen `event` eklenir: `successful`, `failed` ya da `expired`. Gövdeyi abonelik bildirimindeki gibi **ham** okuyun.
+
+```ts
+app.post('/odemehub/odeme', express.raw({ type: 'application/json' }), (req, res) => {
+    let webhook;
+
+    try {
+        webhook = client.transactionWebhook(req.body, req.get('X-Signature'));
+    } catch (error) {
+        if (error instanceof SignatureError) {
+            return res.sendStatus(400);
+        }
+
+        throw error;
+    }
+
+    if (webhook.isSuccessful()) {
+        siparisiOdendiIsaretle(webhook.channelReference, webhook.transactionToken);
+    }
+
+    res.sendStatus(200);
+});
+```
+
+Ödeme başlatılırken reddedilen (yanıtı anında aldığınız) ödeme için bildirim gitmez. Aynı sipariş için birden fazla deneme olabildiğinden bildirimi `transactionToken` ile tekilleştirin. 2xx dışında bir yanıt (ya da yanıtsızlık) başarısız sayılır; bildirim 5 dakika sonra bir kez daha denenir ve ulaşmayan bildirimler panelde işlemin sayfasında listelenir. Bildirim hiç gelmezse `retrieveTransactions()` ile sorabilirsiniz (aşağıda).
+
+### Bir referansın bütün denemeleri
+
+Elinizde yalnızca kendi sipariş numaranız varsa, o numara altında yapılmış **bütün** ödeme denemelerini — hangisi reddedildi, hangisi geçti — eskiden yeniye listeleyin:
+
+```ts
+const attempts = await client.retrieveTransactions({ channelReference: 'SIP-10232' });
+
+for (const attempt of attempts.transactions) {
+    console.log(attempt.status, attempt.paymentStatus, attempt.errorMessage ?? '');
+}
+
+const paid = attempts.successful();   // geçen deneme ya da null
+```
+
+Her deneme `token`, `status` (`started`, `redirected_to_secure_page`, `returned_from_secure_page`, `failed`, `expired`, `successful`), `paymentStatus` (`unpaid`, `paid`, `cancelled`, `refunded`, `partially_refunded`), `securityType`, `amount` / `baseAmount` / `currency`, `installmentNumber`, `isTest`, `errorCode` / `errorMessage`, `createdAt`, `customerChannelReference`, `conversion` ve bağlı olduğu `orderToken` / `subscriptionToken` alanlarını taşır. Ödeme sayfasından açılan siparişin denemeleri de siparişin referansı altında burada görünür.
 
 ## Ürünler
 
@@ -158,6 +203,7 @@ const order = await client.orderPayment({
     channelReference: 'SIPARIS-10233',
     successUrl: 'https://magazam.com/tesekkurler',
     cancelUrl: 'https://magazam.com/sepet',
+    webhookUrl: 'https://magazam.com/odemehub/siparis',   // isteğe bağlı, aşağıya bakın
     customer,
     items: [
         { channelReference: 'KAHVE-MAKINESI' },
@@ -166,12 +212,52 @@ const order = await client.orderPayment({
     ],
 });
 
-res.redirect(order.checkoutUrl);
+res.redirect(order.checkoutUrl!);
 ```
 
 Sipariş tutarını göndermezsiniz; geçit kalemleri toplar ve `order.amount` olarak döner. Bir kalemin boş bıraktığı ad, fiyat ve KDV oranı kayıtlı üründen gelir; kalemde verdiğiniz değerler yalnızca o sipariş için geçerlidir, ürünü değiştirmez. Kayıtlı olmayan bir referansla da kalem gönderebilirsiniz, ama o zaman `name` ve `unitAmount` zorunludur. Kalemin `image` alanı (`https://` adres) ödeme sayfasında kalemin yanında gösterilir; verilmezse kayıtlı ürünün görseli kullanılır, ürün kayıtlı değilse kalem görselsiz görünür.
 
 Ödeme tamamlanınca müşteri, 3D'dekiyle aynı biçimde `successUrl` adresinize döner: aynı üç alan gelir, sonucu yine `retrievePayment()` ile sorarsınız. Müşteri ödeme sayfasında karttan kaynaklı bir hata alırsa size dönmez, sayfada kalıp başka kartla dener.
+
+Yanıt (`Response.Order`) siparişi bütünüyle taşır: `token`, `channelReference`, `description`, `status` (`open` / `paid`), `items[]`, `subtotal`, `taxAmount`, `amount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenince `null`) ve ödeyen işlemin token'ı `transactionToken` (açıkken `null`). Aynı nesne `retrieveOrder()` ve sipariş bildiriminde de gelir.
+
+### Sipariş bildirimi (webhook) ve sipariş sorgusu
+
+Müşteri ödedikten sonra sekmeyi kapatırsa tarayıcı `successUrl` adresinize hiç dönmez. Siparişi açarken `webhookUrl` verirseniz sipariş ödendiği an geçidin **kendi sunucusu** o adrese imzalı bir POST gönderir; gövde `event: "paid"` ve siparişin kendisidir (`transactionToken` dolu gelir). Başarısız denemeler bildirilmez — sipariş açık kalır, müşteri sayfada yeniden dener.
+
+```ts
+app.post('/odemehub/siparis', express.raw({ type: 'application/json' }), (req, res) => {
+    let webhook;
+
+    try {
+        webhook = client.orderWebhook(req.body, req.get('X-Signature'));
+    } catch (error) {
+        if (error instanceof SignatureError) {
+            return res.sendStatus(400);
+        }
+
+        throw error;
+    }
+
+    if (webhook.isPaid()) {
+        siparisiOdendiIsaretle(webhook.order.channelReference, webhook.order.transactionToken);
+    }
+
+    res.sendStatus(200);
+});
+```
+
+Elinizde siparişin token'ı varsa durumunu her zaman kendiniz de sorabilirsiniz:
+
+```ts
+const order = await client.retrieveOrder({ orderToken: token });
+
+if (order.isPaid()) {
+    // order.transactionToken ile iade / iptal / retrievePayment yapılabilir
+}
+```
+
+Siparişin bütün denemelerini (reddedilenler dahil) görmek için `retrieveTransactions()` ile siparişin `channelReference` değerini sorun.
 
 ## Abonelikler
 
@@ -287,7 +373,7 @@ Gönderilen olaylar aboneliğin **durumudur**, yapılan işlem değil:
 | `cancelled` | abonelik iptal edildi; müşteri `endsAt` tarihine kadar hizmeti almaya devam eder |
 | `ended` | ödenmiş dönem doldu, abonelik kapandı |
 
-2xx dışında bir yanıt (ya da yanıtsızlık) başarısız sayılır; bildirim 5 dakika sonra bir kez daha denenir. Ulaşmayan bildirimler panelde aboneliğin sayfasında HTTP kodu ve yanıtıyla listelenir.
+2xx dışında bir yanıt (ya da yanıtsızlık) başarısız sayılır; bildirim 5 dakika sonra bir kez daha denenir. Ulaşmayan bildirimler panelde aboneliğin sayfasında HTTP kodu ve yanıtıyla listelenir. Sipariş (`orderWebhook()`) ve 3D ödeme (`transactionWebhook()`) bildirimleri de aynı yöntemle gider; her biri kendi adresine, kendi okuyucusuyla.
 
 ## Ödeme hangi hesaptan geçer
 

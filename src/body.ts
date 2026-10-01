@@ -93,6 +93,10 @@ export function securePayment(message: Request.SecurePayment, channelToken: stri
     const body = payment(message, channelToken);
     (body.transaction as Body).callback_url = message.callbackUrl;
 
+    if (message.webhookUrl !== undefined) {
+        (body.transaction as Body).webhook_url = message.webhookUrl;
+    }
+
     return { path: 'secure-payment', body };
 }
 
@@ -112,6 +116,7 @@ export function orderPayment(message: Request.OrderPayment, channelToken: string
                 currency: message.currency,
                 success_url: message.successUrl,
                 cancel_url: message.cancelUrl,
+                webhook_url: message.webhookUrl,
                 items: message.items.map((item) => said({
                     channel_reference: item.channelReference,
                     name: item.name,
@@ -165,6 +170,22 @@ export function cancelPayment(message: Request.CancelPayment): Message {
 
 export function retrievePayment(message: Request.RetrievePayment): Message {
     return { path: 'retrieve-payment', body: { transaction: { token: message.transactionToken } } };
+}
+
+export function retrieveTransactions(message: Request.RetrieveTransactions, channelToken: string): Message {
+    return {
+        path: 'retrieve-transactions',
+        body: {
+            transaction: {
+                channel_token: message.channelToken ?? channelToken,
+                channel_reference: message.channelReference,
+            },
+        },
+    };
+}
+
+export function retrieveOrder(message: Request.RetrieveOrder): Message {
+    return { path: 'retrieve-order', body: { order: { token: message.orderToken } } };
 }
 
 export function retrieveBin(message: Request.RetrieveBin): Message {

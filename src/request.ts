@@ -134,6 +134,14 @@ export interface Payment extends ChannelMessage {
 export interface SecurePayment extends Payment {
     /** Where the customer is posted back to, with the signed outcome, once they are done at their bank. */
     callbackUrl: string;
+    /**
+     * Where the merchant's own server is told how the payment went, signed
+     * the way every answer is. The customer's browser carries the word to
+     * `callbackUrl` only if the customer stays for it; this address hears
+     * either way, including when the customer never opened the bank's page
+     * and the payment expired.
+     */
+    webhookUrl?: string;
 }
 
 /**
@@ -182,6 +190,13 @@ export interface OrderPayment extends ChannelMessage {
     items: OrderItem[];
     /** Where the customer goes if they turn back without paying. */
     cancelUrl?: string;
+    /**
+     * Where the merchant's own server is told the order was paid, signed the
+     * way every answer is. The customer's browser carries the word to
+     * `successUrl` only if the customer stays for it; this address hears
+     * either way.
+     */
+    webhookUrl?: string;
     description?: string;
     /** Three letters, e.g. TRY. Left out, the gateway takes the lira. */
     currency?: string;
@@ -191,6 +206,28 @@ export interface OrderPayment extends ChannelMessage {
      * used where none of them holds.
      */
     paymentProviderToken?: string;
+}
+
+/**
+ * Where an order stands: what it is for, whether it has been paid and, if
+ * so, by which payment. The order is named by the token the gateway gave it
+ * when it was opened, which is all a merchant holds of an order whose
+ * customer never came back from the checkout. Nothing is changed by asking.
+ */
+export interface RetrieveOrder {
+    /** The order's token in the gateway, as it answered when it was opened. */
+    orderToken: string;
+}
+
+/**
+ * Every attempt at paying something the merchant names by its own number on
+ * a channel: the order number it opened an order with, or started a payment
+ * with. How many times the customer tried, which were refused and which went
+ * through. Nothing is changed by asking.
+ */
+export interface RetrieveTransactions extends ChannelMessage {
+    /** The number the payments were made under in the calling system. */
+    channelReference: string;
 }
 
 /**

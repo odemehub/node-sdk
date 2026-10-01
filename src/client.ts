@@ -78,8 +78,8 @@ export class Client {
      * Open an order to be paid on the gateway's own page, and get back the
      * address to send the customer to.
      */
-    async orderPayment(orderPayment: Request.OrderPayment): Promise<Response.OrderPayment> {
-        return Response.OrderPayment.fromBody(await this.send(body.orderPayment(orderPayment, this.options.channelToken)));
+    async orderPayment(orderPayment: Request.OrderPayment): Promise<Response.Order> {
+        return Response.Order.fromBody(await this.send(body.orderPayment(orderPayment, this.options.channelToken)));
     }
 
     /**
@@ -139,6 +139,24 @@ export class Client {
      * Where a subscription stands: what it is for, the period it is on and
      * whether that period has been paid for.
      */
+    /**
+     * Every attempt made under one of the merchant's own numbers on a
+     * channel, oldest first: how many times the customer tried, which were
+     * refused and which went through.
+     */
+    async retrieveTransactions(transactions: Request.RetrieveTransactions): Promise<Response.Transactions> {
+        return Response.Transactions.fromBody(await this.send(body.retrieveTransactions(transactions, this.options.channelToken)));
+    }
+
+    /**
+     * Where an order stands: what it is for, whether it has been paid and,
+     * if so, by which payment. The one call a merchant holding nothing but
+     * the order's token can make.
+     */
+    async retrieveOrder(order: Request.RetrieveOrder): Promise<Response.Order> {
+        return Response.Order.fromBody(await this.send(body.retrieveOrder(order)));
+    }
+
     async retrieveSubscription(subscription: Request.RetrieveSubscription): Promise<Response.Subscription> {
         return Response.Subscription.fromBody(await this.send(body.retrieveSubscription(subscription)));
     }
@@ -194,13 +212,44 @@ export class Client {
      * @throws {SignatureError} when the signature does not hold.
      */
     subscriptionWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.SubscriptionWebhook {
+        return Response.SubscriptionWebhook.fromBody(this.webhook(payload, signature));
+    }
+
+    /**
+     * Read the word the gateway sent about an order: that it was paid, with
+     * the payment that paid it. Posted to the address the order was opened
+     * with and read the way a subscription's word is.
+     *
+     * @throws {SignatureError} when the signature does not hold.
+     */
+    orderWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.OrderWebhook {
+        return Response.OrderWebhook.fromBody(this.webhook(payload, signature));
+    }
+
+    /**
+     * Read the word the gateway sent about a payment the customer finished
+     * at their bank: the same answer `retrievePayment` gives, with the state
+     * reached on top. Posted to the address the payment was started with and
+     * read the way a subscription's word is.
+     *
+     * @throws {SignatureError} when the signature does not hold.
+     */
+    transactionWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.TransactionWebhook {
+        return Response.TransactionWebhook.fromBody(this.webhook(payload, signature));
+    }
+
+    /**
+     * Check a word's signature and open it. Nothing in it is believed until
+     * the signature holds.
+     */
+    private webhook(payload: string | Uint8Array, signature: string | null | undefined): Body {
         if (!this.signature.verify(payload, signature)) {
             throw new SignatureError('Bildirimin imzası doğrulanamadı; bildirim ödeme geçidinden gelmemiş olabilir.');
         }
 
         const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
 
-        return Response.SubscriptionWebhook.fromBody(this.decode(text, 0));
+        return this.decode(text, 0);
     }
 
     /**
