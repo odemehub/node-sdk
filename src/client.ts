@@ -18,7 +18,7 @@ import { Signature } from './signature.js';
  * opens its own team's endpoints.
  */
 export interface Options {
-    /** The address the application is served from, e.g. https://odeme.gurmehub.com. */
+    /** The address the application is served from, e.g. https://app.odemehub.com. */
     baseUrl: string;
     /** The team the payments are made on behalf of, as the Entegrasyon page names it. */
     team: string;
