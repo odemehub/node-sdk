@@ -2,6 +2,9 @@ import * as body from './body.js';
 import type { Body, Message } from './body.js';
 import {
     AuthenticationError,
+    ForbiddenError,
+    NotFoundError,
+    RateLimitError,
     SignatureError,
     TransportError,
     UnexpectedResponseError,
@@ -20,7 +23,7 @@ import { Signature } from './signature.js';
 export interface Options {
     /** The address the application is served from, e.g. https://app.odemehub.com. */
     baseUrl: string;
-    /** The team the payments are made on behalf of, as the Entegrasyon page names it. */
+    /** The team the payments are made on behalf of: the ten-digit workspace id the Entegrasyon page shows. */
     team: string;
     /**
      * The channel every request speaks for: the shop, the marketplace or the
@@ -41,6 +44,10 @@ export interface Options {
  * The gateway, as the merchant's application talks to it. Every request
  * leaves signed with the team's secret and every answer is checked against
  * it, so both sides can tell the other is really who it says it is.
+ *
+ * There is one method per endpoint, named after it: `create-order` is
+ * `createOrder()`, `retrieve-saved-cards-by-reference` is
+ * `retrieveSavedCardsByReference()`.
  */
 export class Client {
     /**
@@ -60,7 +67,8 @@ export class Client {
     /**
      * Start a payment the customer confirms with their bank. A successful
      * answer is not a settled payment: the customer is still to be sent to
-     * the address it comes back with.
+     * the address it comes back with, and `retrievePayment` says what
+     * became of it once they are back.
      */
     async securePayment(payment: Request.SecurePayment): Promise<Response.SecurePayment> {
         return Response.SecurePayment.fromBody(await this.send(body.securePayment(payment, this.options.channelToken)));
@@ -72,23 +80,6 @@ export class Client {
      */
     async regularPayment(payment: Request.RegularPayment): Promise<Response.RegularPayment> {
         return Response.RegularPayment.fromBody(await this.send(body.regularPayment(payment, this.options.channelToken)));
-    }
-
-    /**
-     * Open an order to be paid on the gateway's own page, and get back the
-     * address to send the customer to.
-     */
-    async orderPayment(orderPayment: Request.OrderPayment): Promise<Response.Order> {
-        return Response.Order.fromBody(await this.send(body.orderPayment(orderPayment, this.options.channelToken)));
-    }
-
-    /**
-     * Open a subscription. The customer is sent to the address it comes back
-     * with and pays there, and the periods after that are taken from the
-     * card they pay with.
-     */
-    async subscriptionPayment(subscription: Request.SubscriptionPayment): Promise<Response.Subscription> {
-        return Response.Subscription.fromBody(await this.send(body.subscriptionPayment(subscription, this.options.channelToken)));
     }
 
     /**
@@ -118,6 +109,22 @@ export class Client {
     }
 
     /**
+     * How the last payment under one of the merchant's own references went,
+     * for the merchant that sent a payment and never heard back.
+     */
+    async retrievePaymentByReference(payment: Request.RetrievePaymentByReference): Promise<Response.Payment> {
+        return Response.Payment.fromBody(await this.send(body.retrievePaymentByReference(payment, this.options.channelToken)));
+    }
+
+    /**
+     * Every payment attempt on a channel within a stretch of days, oldest
+     * first, with each one's state, amount and what became of its money.
+     */
+    async retrievePaymentsByChannelReference(payments: Request.RetrievePaymentsByChannelReference = {}): Promise<Response.PaymentList> {
+        return Response.PaymentList.fromBody(await this.send(body.retrievePaymentsByChannelReference(payments, this.options.channelToken)));
+    }
+
+    /**
      * Ask what the gateway's provider knows about a card by the head of its
      * number, and how an amount may be paid off on it. Nothing is charged and
      * nothing is written down.
@@ -127,151 +134,225 @@ export class Client {
     }
 
     /**
-     * Save a product in the merchant's catalogue at the gateway, or change
-     * the one already saved under the same key on the same channel. Order
-     * lines and subscriptions name products by key.
+     * Open an order to be paid on the gateway's own page, or write over the
+     * open one already under the same reference. Nothing is charged here;
+     * the customer is sent to the address that comes back and pays there.
      */
-    async saveProduct(product: Request.SaveProduct): Promise<Response.Product> {
-        return Response.Product.fromBody(await this.send(body.saveProduct(product, this.options.channelToken)));
+    async createOrder(order: Request.CreateOrder): Promise<Response.OrderDetails> {
+        return Response.OrderDetails.fromBody(await this.send(body.createOrder(order, this.options.channelToken)));
     }
 
     /**
-     * Where a subscription stands: what it is for, the period it is on and
-     * whether that period has been paid for.
+     * Where an order stands, by its token: what it is for, whether it has
+     * been paid and, if so, by which payment.
      */
-    /**
-     * Every attempt made under one of the merchant's own numbers on a
-     * channel, oldest first: how many times the customer tried, which were
-     * refused and which went through.
-     */
-    async retrieveTransactions(transactions: Request.RetrieveTransactions): Promise<Response.Transactions> {
-        return Response.Transactions.fromBody(await this.send(body.retrieveTransactions(transactions, this.options.channelToken)));
+    async retrieveOrder(order: Request.RetrieveOrder): Promise<Response.OrderDetails> {
+        return Response.OrderDetails.fromBody(await this.send(body.retrieveOrder(order)));
     }
 
     /**
-     * Where an order stands: what it is for, whether it has been paid and,
-     * if so, by which payment. The one call a merchant holding nothing but
-     * the order's token can make.
+     * Where the last order under one of the merchant's own references stands.
      */
-    async retrieveOrder(order: Request.RetrieveOrder): Promise<Response.Order> {
-        return Response.Order.fromBody(await this.send(body.retrieveOrder(order)));
-    }
-
-    async retrieveSubscription(subscription: Request.RetrieveSubscription): Promise<Response.Subscription> {
-        return Response.Subscription.fromBody(await this.send(body.retrieveSubscription(subscription)));
+    async retrieveOrderByReference(order: Request.RetrieveOrderByReference): Promise<Response.OrderDetails> {
+        return Response.OrderDetails.fromBody(await this.send(body.retrieveOrderByReference(order, this.options.channelToken)));
     }
 
     /**
-     * Call a subscription off. Nothing is given back: the customer keeps the
-     * days they already paid for and is served to the end of them, and
-     * nothing is charged after that.
+     * Every order opened on a channel within a stretch of days, oldest first.
      */
-    async cancelSubscription(subscription: Request.CancelSubscription): Promise<Response.Subscription> {
-        return Response.Subscription.fromBody(await this.send(body.cancelSubscription(subscription)));
+    async retrieveOrdersByChannelReference(orders: Request.RetrieveOrdersByChannelReference = {}): Promise<Response.OrderList> {
+        return Response.OrderList.fromBody(await this.send(body.retrieveOrdersByChannelReference(orders, this.options.channelToken)));
+    }
+
+    /**
+     * Change an open order. Only what is sent is written.
+     */
+    async updateOrder(order: Request.UpdateOrder): Promise<Response.OrderDetails> {
+        return Response.OrderDetails.fromBody(await this.send(body.updateOrder(order)));
+    }
+
+    /**
+     * Open a payment link, or write over the one already under the same
+     * reference. The address that comes back is the link itself.
+     */
+    async createPaymentLink(paymentLink: Request.CreatePaymentLink): Promise<Response.PaymentLinkDetails> {
+        return Response.PaymentLinkDetails.fromBody(await this.send(body.createPaymentLink(paymentLink, this.options.channelToken)));
+    }
+
+    /**
+     * A payment link as it stands, by its token, with how many payments
+     * were made on it and the latest fifty of them.
+     */
+    async retrievePaymentLink(paymentLink: Request.RetrievePaymentLink): Promise<Response.PaymentLinkDetails> {
+        return Response.PaymentLinkDetails.fromBody(await this.send(body.retrievePaymentLink(paymentLink)));
+    }
+
+    /**
+     * A payment link as it stands, by the merchant's own reference for it.
+     */
+    async retrievePaymentLinkByReference(paymentLink: Request.RetrievePaymentLinkByReference): Promise<Response.PaymentLinkDetails> {
+        return Response.PaymentLinkDetails.fromBody(await this.send(body.retrievePaymentLinkByReference(paymentLink, this.options.channelToken)));
+    }
+
+    /**
+     * Every payment link opened on a channel within a stretch of days,
+     * oldest first.
+     */
+    async retrievePaymentLinksByChannelReference(paymentLinks: Request.RetrievePaymentLinksByChannelReference = {}): Promise<Response.PaymentLinkList> {
+        return Response.PaymentLinkList.fromBody(await this.send(body.retrievePaymentLinksByChannelReference(paymentLinks, this.options.channelToken)));
+    }
+
+    /**
+     * Change a payment link: its lines, its day, whether it takes payments.
+     * Only what is sent is written.
+     */
+    async updatePaymentLink(paymentLink: Request.UpdatePaymentLink): Promise<Response.PaymentLinkDetails> {
+        return Response.PaymentLinkDetails.fromBody(await this.send(body.updatePaymentLink(paymentLink)));
+    }
+
+    /**
+     * Open a subscription, its first renewal to be paid on the gateway's own
+     * page and the rest taken from the card kept then; or write over the one
+     * already under the same reference while nothing has been paid on it.
+     */
+    async createSubscription(subscription: Request.CreateSubscription): Promise<Response.SubscriptionDetails> {
+        return Response.SubscriptionDetails.fromBody(await this.send(body.createSubscription(subscription, this.options.channelToken)));
+    }
+
+    /**
+     * Where a subscription stands, by its token.
+     */
+    async retrieveSubscription(subscription: Request.RetrieveSubscription): Promise<Response.SubscriptionDetails> {
+        return Response.SubscriptionDetails.fromBody(await this.send(body.retrieveSubscription(subscription)));
+    }
+
+    /**
+     * Where the last subscription under one of the merchant's own references
+     * stands.
+     */
+    async retrieveSubscriptionByReference(subscription: Request.RetrieveSubscriptionByReference): Promise<Response.SubscriptionDetails> {
+        return Response.SubscriptionDetails.fromBody(await this.send(body.retrieveSubscriptionByReference(subscription, this.options.channelToken)));
+    }
+
+    /**
+     * Every subscription opened on a channel within a stretch of days,
+     * oldest first.
+     */
+    async retrieveSubscriptionsByChannelReference(subscriptions: Request.RetrieveSubscriptionsByChannelReference = {}): Promise<Response.SubscriptionList> {
+        return Response.SubscriptionList.fromBody(await this.send(body.retrieveSubscriptionsByChannelReference(subscriptions, this.options.channelToken)));
+    }
+
+    /**
+     * Change a subscription, or call it off with the status `cancelled`.
+     * Only what is sent is written. Nothing is given back on a
+     * cancellation: the customer is served to the end of what they paid
+     * for, and nothing is charged after that.
+     */
+    async updateSubscription(subscription: Request.UpdateSubscription): Promise<Response.SubscriptionDetails> {
+        return Response.SubscriptionDetails.fromBody(await this.send(body.updateSubscription(subscription)));
     }
 
     /**
      * Keep a card for a customer without making a payment on it.
      */
-    async saveCard(saveCard: Request.SaveCard): Promise<Response.KeptCard> {
-        return Response.KeptCard.fromBody(await this.send(body.saveCard(saveCard, this.options.channelToken)));
+    async createSavedCard(savedCard: Request.CreateSavedCard): Promise<Response.SavedCardDetails> {
+        return Response.SavedCardDetails.fromBody(await this.send(body.createSavedCard(savedCard, this.options.channelToken)));
     }
 
     /**
-     * The cards a customer let the merchant keep, the default one first.
+     * One kept card, by its token.
      */
-    async savedCards(savedCards: Request.SavedCards): Promise<Response.KeptCards> {
-        return Response.KeptCards.fromBody(await this.send(body.savedCards(savedCards, this.options.channelToken)));
+    async retrieveSavedCard(savedCard: Request.RetrieveSavedCard): Promise<Response.SavedCardDetails> {
+        return Response.SavedCardDetails.fromBody(await this.send(body.retrieveSavedCard(savedCard)));
+    }
+
+    /**
+     * The cards kept for a customer, the default one first.
+     */
+    async retrieveSavedCardsByReference(savedCards: Request.RetrieveSavedCardsByReference): Promise<Response.SavedCardList> {
+        return Response.SavedCardList.fromBody(await this.send(body.retrieveSavedCardsByReference(savedCards, this.options.channelToken)));
     }
 
     /**
      * Make one of a customer's kept cards the one they pay with unless they
      * say otherwise.
      */
-    async defaultSavedCard(defaultSavedCard: Request.DefaultSavedCard): Promise<Response.KeptCard> {
-        return Response.KeptCard.fromBody(await this.send(body.defaultSavedCard(defaultSavedCard, this.options.channelToken)));
+    async updateSavedCard(savedCard: Request.UpdateSavedCard): Promise<Response.SavedCardDetails> {
+        return Response.SavedCardDetails.fromBody(await this.send(body.updateSavedCard(savedCard)));
     }
 
     /**
      * Let go of one of a customer's kept cards, at the provider and here.
      */
-    async deleteSavedCard(deleteSavedCard: Request.DeleteSavedCard): Promise<Response.KeptCard> {
-        return Response.KeptCard.fromBody(await this.send(body.deleteSavedCard(deleteSavedCard, this.options.channelToken)));
+    async deleteSavedCard(savedCard: Request.DeleteSavedCard): Promise<Response.DeletedSavedCard> {
+        return Response.DeletedSavedCard.fromBody(await this.send(body.deleteSavedCard(savedCard)));
     }
 
     /**
-     * Read the word the gateway sent about a subscription: posted to the
-     * address the subscription was opened with, as plain JSON signed in the
-     * `X-Signature` header. Hand it the body exactly as it arrived, byte for
-     * byte, together with the header; nothing in it is to be believed until
-     * the signature holds.
+     * Read a word the gateway posted to one of the merchant's webhook
+     * addresses. Hand it the request exactly as it arrived — the method,
+     * the path of the address it came to (without the query string), the
+     * raw body byte for byte and the two headers — and nothing in it is
+     * believed until the signature is checked against the secret.
      *
      * With Express, read the body raw for this route, e.g.
      * `express.raw({ type: 'application/json' })`, and hand over `req.body`.
      *
-     * @throws {SignatureError} when the signature does not hold.
-     */
-    subscriptionWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.SubscriptionWebhook {
-        return Response.SubscriptionWebhook.fromBody(this.webhook(payload, signature));
-    }
-
-    /**
-     * Read the word the gateway sent about an order: that it was paid, with
-     * the payment that paid it. Posted to the address the order was opened
-     * with and read the way a subscription's word is.
+     * The word only names what it is about; ask the gateway what became of
+     * it before acting on it. Answer with any 2xx once the word is taken;
+     * the gateway tries again, up to five times, until it hears one.
      *
      * @throws {SignatureError} when the signature does not hold.
      */
-    orderWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.OrderWebhook {
-        return Response.OrderWebhook.fromBody(this.webhook(payload, signature));
-    }
+    webhook(method: string, path: string, payload: string | Uint8Array, timestamp: string | null | undefined, signature: string | null | undefined): Response.Webhook {
+        const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
 
-    /**
-     * Read the word the gateway sent about a payment the customer finished
-     * at their bank: the same answer `retrievePayment` gives, with the state
-     * reached on top. Posted to the address the payment was started with and
-     * read the way a subscription's word is.
-     *
-     * @throws {SignatureError} when the signature does not hold.
-     */
-    transactionWebhook(payload: string | Uint8Array, signature: string | null | undefined): Response.TransactionWebhook {
-        return Response.TransactionWebhook.fromBody(this.webhook(payload, signature));
-    }
-
-    /**
-     * Check a word's signature and open it. Nothing in it is believed until
-     * the signature holds.
-     */
-    private webhook(payload: string | Uint8Array, signature: string | null | undefined): Body {
-        if (!this.signature.verify(payload, signature)) {
+        if (!this.verifyWebhook(method, path, text, timestamp, signature)) {
             throw new SignatureError('Bildirimin imzası doğrulanamadı; bildirim ödeme geçidinden gelmemiş olabilir.');
         }
 
+        return Response.Webhook.fromBody(this.decode(text, 0));
+    }
+
+    /**
+     * Whether a word that arrived at a webhook address was signed by the
+     * gateway with this team's secret, recently enough to be taken. The
+     * path is the address's own, with its leading slash and without the
+     * query string; the body is the raw text, byte for byte.
+     */
+    verifyWebhook(method: string, path: string, payload: string | Uint8Array, timestamp: string | null | undefined, signature: string | null | undefined): boolean {
         const text = typeof payload === 'string' ? payload : Buffer.from(payload).toString('utf8');
 
-        return this.decode(text, 0);
+        return this.signature.verifyMessage(method, path, text, timestamp, signature);
     }
 
     /**
      * Sign what is being asked for, hand it to the gateway and read the
      * answer back. The body is signed exactly as it is sent, character for
-     * character, so it is written once and used for both.
+     * character, so it is written once and used for both; a GET sends no
+     * body and signs the empty string.
      */
     private async send(message: Message): Promise<Body> {
-        const payload = JSON.stringify(message.body);
+        const path = this.path(message.path);
+        const payload = message.body === null ? '' : JSON.stringify(message.body);
+        const headers: Record<string, string> = {
+            [Client.API_KEY_HEADER]: this.options.apiKey,
+            ...this.signature.headers(message.method, path, payload),
+            Accept: 'application/json',
+        };
+
+        if (message.method !== 'GET') {
+            headers['Content-Type'] = 'application/json';
+        }
+
         let response: globalThis.Response;
         let text: string;
 
         try {
-            response = await this.fetch(this.url(message.path), {
-                method: 'POST',
-                headers: {
-                    [Client.API_KEY_HEADER]: this.options.apiKey,
-                    [Signature.HEADER]: this.signature.sign(payload),
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                },
-                body: payload,
+            response = await this.fetch(this.url(path), {
+                method: message.method,
+                headers,
+                body: message.method === 'GET' ? undefined : payload,
                 signal: AbortSignal.timeout(this.options.timeout ?? 60_000),
             });
             text = await response.text();
@@ -279,29 +360,49 @@ export class Client {
             throw new TransportError(`Ödeme geçidine ulaşılamadı: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
         }
 
-        return this.read(response.status, text, response.headers.get(Signature.HEADER));
+        return this.read(response, text, message.method, path);
     }
 
     /**
-     * The full address of a gateway endpoint for this team.
+     * The path of a gateway endpoint for this team, as it is signed: with
+     * its leading slash and nothing in front of it.
+     */
+    private path(endpoint: string): string {
+        return `/api/${this.options.team}/gateway/${endpoint}`;
+    }
+
+    /**
+     * The full address of a gateway path.
      */
     private url(path: string): string {
-        return `${this.options.baseUrl.replace(/\/+$/, '')}/api/${this.options.team}/gateway/${path}`;
+        return `${this.options.baseUrl.replace(/\/+$/, '')}${path}`;
     }
 
     /**
      * Read the answer. An outcome is answered with 200 and signed, however
      * the payment itself turned out: a payment the provider declined is an
-     * outcome like any other and comes back rather than being raised.
+     * outcome like any other and comes back rather than being raised. The
+     * signature is checked over the method and path of the request and the
+     * answer's own moment and body.
      *
      * Anything else is a refusal — the request never became a payment — and
      * the status says which kind. The gateway signs some of those too, but a
      * signature does not make a refusal an outcome, so the status is read
      * first.
      */
-    private read(status: number, payload: string, signature: string | null): Body {
+    private read(response: globalThis.Response, payload: string, method: string, path: string): Body {
+        const status = response.status;
+
         if (status === 200) {
-            if (!this.signature.verify(payload, signature === '' ? null : signature)) {
+            const verified = this.signature.verifyMessage(
+                method,
+                path,
+                payload,
+                response.headers.get(Signature.TIMESTAMP_HEADER),
+                response.headers.get(Signature.HEADER),
+            );
+
+            if (!verified) {
                 throw new SignatureError('Yanıtın imzası doğrulanamadı; yanıt ödeme geçidinden gelmemiş olabilir.');
             }
 
@@ -310,15 +411,20 @@ export class Client {
 
         const [message, errors] = this.refusal(payload);
 
-        if (status === 401) {
-            throw new AuthenticationError(message);
+        switch (status) {
+            case 401:
+                throw new AuthenticationError(message);
+            case 403:
+                throw new ForbiddenError(message);
+            case 404:
+                throw new NotFoundError(message);
+            case 422:
+                throw new ValidationError(message, errors);
+            case 429:
+                throw new RateLimitError(message, retryAfter(response.headers.get('Retry-After')));
+            default:
+                throw new UnexpectedResponseError(message, status);
         }
-
-        if (status === 422) {
-            throw new ValidationError(message, errors);
-        }
-
-        throw new UnexpectedResponseError(message, status);
     }
 
     /**
@@ -367,4 +473,11 @@ export class Client {
 
 function isObject(value: unknown): value is Body {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * How long the gateway asked to wait before trying again, in seconds.
+ */
+function retryAfter(value: string | null): number | null {
+    return value !== null && /^[0-9]+$/.test(value) ? Number(value) : null;
 }
