@@ -13,18 +13,6 @@ import type { Currency, Period, SubscriptionStatus } from './enums.js';
 export type { Currency, Period } from './enums.js';
 
 /**
- * A message that speaks for one of the team's channels: a payment, an order
- * opened for checkout, a card kept for a customer. The channel belongs to
- * the integration rather than to any one message, so it is named once on
- * the client; a merchant selling on more than one channel names another
- * here, on the single message that belongs elsewhere.
- */
-export interface ChannelMessage {
-    /** The channel this one message speaks for. Left out, the client's own is used. */
-    channelToken?: string;
-}
-
-/**
  * The card a payment is attempted with. The number and the security code
  * travel no further than the request body: the gateway keeps only the head
  * and the tail digits of the number and no digit of the code.
@@ -40,9 +28,9 @@ export interface Card {
     expiryYear: string;
     /**
      * Whether the customer asked for this card to be kept, so they can pay
-     * with it again without typing it out. It is kept under the customer's
-     * `reference`, which then has to be sent, and the account's provider has
-     * to be able to charge a kept card.
+     * with it again without typing it out. It is kept for the customer named
+     * by `customer.reference`, which then has to be sent, and the account's
+     * provider has to be able to charge a kept card.
      */
     shouldSave?: boolean;
 }
@@ -87,7 +75,9 @@ export type BillingAddress = Partial<Person> & Company;
  * The customer an order or a subscription is for: the key the merchant
  * keeps them under, where the bill goes and where the goods go — any of
  * it, or none. What is given is shown filled in on the checkout page, and
- * the payer is asked for the rest.
+ * the payer is asked for the rest. The key makes them one of the team's
+ * customers, written once a payment for them goes through; without it the
+ * payer is nobody the team keeps.
  */
 export interface Customer {
     /** The key the merchant keeps this customer under in its own system. */
@@ -98,8 +88,9 @@ export interface Customer {
 
 /**
  * The customer a payment is made for: the whole billing address, and the
- * key the merchant keeps them under when it has one. A card is only kept,
- * and a kept card only charged, under the key.
+ * key the merchant keeps them under when it has one. The customer is
+ * written under the key once the payment goes through; a card is only
+ * kept for, and a kept card only charged for, a customer named by it.
  */
 export interface PaymentCustomer {
     /** The key the merchant keeps this customer under in its own system. */
@@ -112,14 +103,14 @@ export interface PaymentCustomer {
  * customer typed in or with one they let the merchant keep, never with
  * both: the gateway turns down a body that names both.
  */
-export interface Payment extends ChannelMessage {
+export interface Payment {
     /**
      * The reference the payment is known by in the calling system, such as
      * SIP-10231. It has to carry at least one digit: its digits end the
      * order number the bank is sent, so the payment can be found in the
      * bank's panel by it.
      */
-    channelReference: string;
+    reference: string;
     /**
      * The amount, as digits with the kurus behind a point: '100', '100.1'
      * or '100.10'. A comma is refused. It is a string so that it is signed
@@ -136,8 +127,8 @@ export interface Payment extends ChannelMessage {
     /**
      * A card the customer let the merchant keep, by the token the gateway
      * gave it. It is only charged for the customer it was kept for — the
-     * same channel and `customer.reference` — and at the account it is kept
-     * at, so no `paymentProviderToken` is sent with it.
+     * same `customer.reference` — and at the account it is kept at, so no
+     * `paymentProviderToken` is sent with it.
      */
     savedCardToken?: string;
     /** Left out, the gateway takes the lira. */
@@ -203,48 +194,6 @@ export interface RefundPayment extends PaymentMessage {
 export type CancelPayment = PaymentMessage;
 
 /**
- * How a payment went, asked for after the fact. A customer sent to their
- * bank comes back carrying the payment's token and nothing more; this is
- * the call that says what became of it.
- */
-export type RetrievePayment = PaymentMessage;
-
-/**
- * Something the merchant names by its own reference for it on one of its
- * channels rather than by its token. Where more than one carries the same
- * reference, the one made last is meant.
- */
-export interface RetrieveByReference extends ChannelMessage {
-    /** The reference it was made under in the calling system. */
-    channelReference: string;
-}
-
-/**
- * Everything of a kind made on one of the merchant's channels within a
- * stretch of days, oldest first. The stretch is at most seven days, both
- * ends counted, in the team's own time; left out, it is the last seven days
- * up to today.
- */
-export interface RetrieveByChannelReference extends ChannelMessage {
-    /** The first day, as `YYYY-MM-DD`. Given together with `createdTo`. */
-    createdFrom?: string;
-    /** The last day, as `YYYY-MM-DD`, at most six days after the first. */
-    createdTo?: string;
-}
-
-/**
- * The last payment made under one of the merchant's own references, for a
- * merchant that sent a payment and never heard back.
- */
-export type RetrievePaymentByReference = RetrieveByReference;
-
-/**
- * Every payment made on a channel within a stretch of days, the attempts
- * the bank turned away included.
- */
-export type RetrievePaymentsByChannelReference = RetrieveByChannelReference;
-
-/**
  * A question about a card before anything is charged to it: who issued it,
  * what kind of card it is, and how the amount may be paid off on it. Only
  * the head of the number is sent, never the whole of it.
@@ -274,43 +223,33 @@ export interface Item {
     unitAmount: string;
     /** 1 to 9999. */
     quantity: number;
-    /** The tax inside the price, as a percentage: '20' or '20.00'. */
-    taxRate: string;
+    /** The tax inside the price, as a percentage: '20' or '20.00'. Left out, the line carries no tax. */
+    taxRate?: string;
     /** The merchant's own key for what is on the line, if it has one. */
-    channelReference?: string;
+    reference?: string;
     /** The https address of the picture shown beside the line at checkout. */
     image?: string;
-}
-
-/**
- * One way the goods of an order or a subscription may be sent, offered to
- * the payer on the checkout page. The one they pick is added to what they
- * pay. The handle is the merchant's own key for it and has to be unique
- * within the list; the amount includes the tax, like an item's price.
- */
-export interface ShippingMethod {
-    handle: string;
-    /** What the payer sees, e.g. 'Standart Kargo'. */
-    title: string;
-    /** What it costs, tax included, as digits with the kurus behind a point; '0' for free. */
-    amount: string;
-    /** The tax inside the amount, as a percentage. */
-    taxRate: string;
+    /**
+     * Whether the line is also kept on the team's product list: written
+     * there under its reference, or the product with that reference brought
+     * up to the line. A line kept so has to carry a reference.
+     */
+    saveAsProduct?: boolean;
 }
 
 /**
  * An order or a subscription opened to be paid on the gateway's own page.
  * Nothing is charged here: the answer carries the address to send the
  * customer to. What it comes to is never sent: it is the lines added up,
- * and the way of sending the payer picks.
+ * and the way of sending the payer picks from the team's own list.
  *
- * Opening again under a reference already open on the channel writes over
- * the open one and answers with it, under its own token, so a call repeated
- * after a lost answer finds what it opened rather than a twin of it.
+ * Opening again under a reference already open writes over the open one
+ * and answers with it, under its own token, so a call repeated after a lost
+ * answer finds what it opened rather than a twin of it.
  */
-export interface CheckoutMessage extends ChannelMessage {
+export interface CheckoutMessage {
     /** The reference it is known by in the calling system. Has to carry at least one digit. */
-    channelReference: string;
+    reference: string;
     /** Where the customer is posted back to once it is paid. */
     successUrl: string;
     /** What it is for; at least one line. */
@@ -328,27 +267,24 @@ export interface CheckoutMessage extends ChannelMessage {
      * is used where none of them holds.
      */
     paymentProviderToken?: string;
-    /** Whether the checkout page asks the payer where the goods go. */
-    requiresShippingAddress?: boolean;
-    /** How the goods may be sent, for the payer to pick from; up to twenty. */
-    shippingMethods?: ShippingMethod[];
+    /**
+     * Whether the checkout page asks the payer where the goods go. One who
+     * is picks a way of sending from the team's own list, of those that send
+     * there, and its price is added to the amount.
+     */
+    requiresShipping?: boolean;
 }
 
 /**
  * A change to an order or a subscription, named by its token. Only what is
- * sent is written: a field left out keeps what there was, lines sent replace
- * every line there was, and shipping methods sent replace the ones there
- * were. A field set to `null` is set to nothing: an empty list of shipping
- * methods or `null` removes them all.
- *
- * The channel is written only when this message names one; the client's
- * own is not sent.
+ * sent is written: a field left out keeps what there was, and lines sent
+ * replace every line there was. A field set to `null` is set to nothing.
  */
-export interface UpdateCheckoutMessage extends ChannelMessage {
-    channelReference?: string;
+export interface UpdateCheckoutMessage {
+    reference?: string;
     successUrl?: string;
     items?: Item[];
-    /** What is sent of the customer is written over what there was of them. */
+    /** What is sent of the customer is written over what there was of them; a reference sent takes the place of the one there was. */
     customer?: Customer;
     cancelUrl?: string | null;
     description?: string | null;
@@ -356,8 +292,7 @@ export interface UpdateCheckoutMessage extends ChannelMessage {
     currency?: Currency | null;
     /** `null` leaves the account to the team's Gate rules and default account again. */
     paymentProviderToken?: string | null;
-    requiresShippingAddress?: boolean | null;
-    shippingMethods?: ShippingMethod[] | null;
+    requiresShipping?: boolean | null;
 }
 
 /**
@@ -372,22 +307,6 @@ export interface UpdateOrder extends UpdateCheckoutMessage {
     /** The order's token in the gateway. */
     token: string;
 }
-
-/**
- * An order asked after by the token the gateway gave it when it was opened,
- * which is all a merchant holds of an order whose customer never came back
- * from the checkout. Nothing is changed by asking.
- */
-export interface RetrieveOrder {
-    /** The order's token in the gateway, as it answered when it was opened. */
-    token: string;
-}
-
-/** The last order opened under one of the merchant's own references. */
-export type RetrieveOrderByReference = RetrieveByReference;
-
-/** Every order opened on a channel within a stretch of days. */
-export type RetrieveOrdersByChannelReference = RetrieveByChannelReference;
 
 /**
  * A subscription opened for a customer and paid for the first time on the
@@ -407,9 +326,9 @@ export interface CreateSubscription extends CheckoutMessage {
 
 /**
  * A change to a subscription. Lines sent re-price every renewal not yet
- * paid. Once the first renewal has been paid the channel, the account, the
- * currency, the period and `customer.reference` stay as they were opened;
- * the gateway turns down a change to any of them.
+ * paid. Once the first renewal has been paid only the status, the period,
+ * the renewal limit and the prices of the same lines may change; the
+ * gateway turns down anything else, the customer included.
  *
  * This is also how a subscription is called off: send the status
  * `cancelled`, the one status a merchant may set. Nothing is charged after
@@ -427,20 +346,6 @@ export interface UpdateSubscription extends UpdateCheckoutMessage {
 }
 
 /**
- * A subscription asked after by its token. Nothing is changed by asking.
- */
-export interface RetrieveSubscription {
-    /** The subscription's token in the gateway, as it answered when it was opened. */
-    token: string;
-}
-
-/** The last subscription opened under one of the merchant's own references. */
-export type RetrieveSubscriptionByReference = RetrieveByReference;
-
-/** Every subscription opened on a channel within a stretch of days. */
-export type RetrieveSubscriptionsByChannelReference = RetrieveByChannelReference;
-
-/**
  * A payment link: a page on the gateway that is paid again and again, by
  * anybody who has the address, until it is switched off or its day runs
  * out. There is no customer; whoever pays says who they are on the page.
@@ -453,14 +358,8 @@ export interface CreatePaymentLink {
     /** What the link is for; at least one line. */
     items: Item[];
     currency: Currency;
-    /**
-     * The channel the link sells on. Left out, the client's own is used;
-     * `null` opens it on the team's own ödemehub channel, where the panel
-     * opens its links.
-     */
-    channelToken?: string | null;
     /** The reference the link is known by in the calling system. Has to carry at least one digit. */
-    channelReference?: string;
+    reference?: string;
     description?: string;
     /** The account the link is paid through; it has to take 3D payments. Left out, Gate rules and the default account decide when it is paid. */
     paymentProviderToken?: string;
@@ -482,9 +381,7 @@ export interface UpdatePaymentLink {
     token: string;
     items?: Item[];
     currency?: Currency;
-    /** Written only when named; `null` moves the link to the team's own ödemehub channel. */
-    channelToken?: string | null;
-    channelReference?: string;
+    reference?: string;
     description?: string | null;
     paymentProviderToken?: string | null;
     /** As `YYYY-MM-DD` in the team's own time; `null` lets it never run out. */
@@ -493,45 +390,16 @@ export interface UpdatePaymentLink {
 }
 
 /**
- * A payment link asked after by its token, with the latest payments made
- * on it. Nothing is changed by asking.
- */
-export interface RetrievePaymentLink {
-    /** The link's token in the gateway, as it answered when it was opened. */
-    token: string;
-}
-
-/**
- * The last link opened under one of the merchant's own references.
- */
-export interface RetrievePaymentLinkByReference {
-    channelReference: string;
-    /** Left out, the client's own channel is looked on; `null` looks on the team's own ödemehub channel. */
-    channelToken?: string | null;
-}
-
-/**
- * Every link opened on a channel within a stretch of days.
- */
-export interface RetrievePaymentLinksByChannelReference {
-    /** The first day, as `YYYY-MM-DD`. Given together with `createdTo`. */
-    createdFrom?: string;
-    /** The last day, as `YYYY-MM-DD`, at most six days after the first. */
-    createdTo?: string;
-    /** Left out, the client's own channel is listed; `null` lists the team's own ödemehub channel. */
-    channelToken?: string | null;
-}
-
-/**
- * A card kept for a customer without a payment being made on it. It is
- * kept under the channel and the customer's reference; a payment with the
- * card has to name the same two.
+ * A card kept for a customer without a payment being made on it. Once the
+ * provider takes it, the team's customer under the reference is written
+ * from what was sent and the card is kept for them; a payment with the card
+ * has to name the same reference.
  *
  * Providers without a card store of their own keep a card by charging a
  * small amount and giving it straight back; those need the security code,
  * and the ones with a real card store do not. It is never stored.
  */
-export interface CreateSavedCard extends ChannelMessage {
+export interface CreateSavedCard {
     /** Who the card belongs to: the key and the whole billing address. */
     customer: { reference: string; billingAddress: Person & Company };
     card: Omit<Card, 'securityCode' | 'shouldSave'> & { securityCode?: string };
@@ -546,21 +414,6 @@ export interface CreateSavedCard extends ChannelMessage {
 export interface SavedCardMessage {
     /** The card's token in the gateway. */
     token: string;
-}
-
-/**
- * One kept card, by its token.
- */
-export type RetrieveSavedCard = SavedCardMessage;
-
-/**
- * The cards kept for a customer, named by the two things a card is kept
- * under: the channel and the merchant's key for the customer. The card they
- * pay with unless they say otherwise comes first.
- */
-export interface RetrieveSavedCardsByReference extends ChannelMessage {
-    /** The key the merchant keeps the customer under. */
-    customerReference: string;
 }
 
 /**
@@ -579,3 +432,52 @@ export interface UpdateSavedCard extends SavedCardMessage {
  * says why.
  */
 export type DeleteSavedCard = SavedCardMessage;
+
+/**
+ * Asking after records of one kind. They are named one of three ways: by
+ * the token the gateway gave one, by the merchant's own reference for them,
+ * or by the days they were made on, as `YYYY-MM-DD` in the team's own time,
+ * both ends counted and at most seven days apart. Asked with none of these,
+ * it is the last seven days up to today. The answer is always a list,
+ * oldest first, and an empty one when nothing matches. Nothing is changed
+ * by asking.
+ */
+export interface Retrieve {
+    /** The record's token in the gateway. */
+    token?: string;
+    /** The merchant's own reference for them. */
+    reference?: string;
+    /** The first day, as `YYYY-MM-DD`. Given together with `createdTo`. */
+    createdFrom?: string;
+    /** The last day, as `YYYY-MM-DD`, at most six days after the first. */
+    createdTo?: string;
+}
+
+/**
+ * Payments asked after: one by its token, every attempt made under the
+ * merchant's reference, or the ones made between two days — the ones the
+ * bank turned away included.
+ */
+export type RetrievePayments = Retrieve;
+
+/** Orders asked after, each with its customer. */
+export type RetrieveOrders = Retrieve;
+
+/** Subscriptions asked after, each with its customer and the renewal it is on. */
+export type RetrieveSubscriptions = Retrieve;
+
+/**
+ * Payment links asked after, each with how many payments were made on it
+ * and the latest fifty of them.
+ */
+export type RetrievePaymentLinks = Retrieve;
+
+/**
+ * Kept cards asked after: one by its token, every card of a customer by the
+ * merchant's reference for them, or the ones kept between two days. A
+ * customer's cards come with the one they pay with by default first.
+ */
+export interface RetrieveSavedCards extends Omit<Retrieve, 'reference'> {
+    /** The merchant's reference for the customer the cards are kept for. */
+    customerReference?: string;
+}

@@ -15,23 +15,15 @@ import * as Response from './response.js';
 import { Signature } from './signature.js';
 
 /**
- * The address the gateway is reached at, the credentials it is reached with
- * and the channel the caller speaks for. A credential pair belongs to a
- * single team, and the team is part of the address, so a pair only ever
- * opens its own team's endpoints.
+ * The address the gateway is reached at and the credentials it is reached
+ * with. A credential pair belongs to a single team, and the team is part of
+ * the address, so a pair only ever opens its own team's endpoints.
  */
 export interface Options {
     /** The address the application is served from, e.g. https://app.odemehub.com. */
     baseUrl: string;
     /** The team the payments are made on behalf of: the ten-digit workspace id the Entegrasyon page shows. */
     team: string;
-    /**
-     * The channel every request speaks for: the shop, the marketplace or the
-     * branch the customer reached the merchant through, by the token the
-     * team's own Kanallar page gives it. A merchant selling on more than one
-     * channel may still name another on a single request.
-     */
-    channelToken: string;
     apiKey: string;
     apiSecret: string;
     /** How long a request may take, in milliseconds. Left out, a minute. */
@@ -46,8 +38,7 @@ export interface Options {
  * it, so both sides can tell the other is really who it says it is.
  *
  * There is one method per endpoint, named after it: `create-order` is
- * `createOrder()`, `retrieve-saved-cards-by-reference` is
- * `retrieveSavedCardsByReference()`.
+ * `createOrder()`, `retrieve-saved-cards` is `retrieveSavedCards()`.
  */
 export class Client {
     /**
@@ -66,12 +57,12 @@ export class Client {
 
     /**
      * Start a payment the customer confirms with their bank. A successful
-     * answer is not a settled payment: the customer is still to be sent to
-     * the address it comes back with, and `retrievePayment` says what
+     * answer is not a settled payment: the customer still has to be sent to
+     * the address it comes back with, and `retrievePayments` says what
      * became of it once they are back.
      */
     async securePayment(payment: Request.SecurePayment): Promise<Response.SecurePayment> {
-        return Response.SecurePayment.fromBody(await this.send(body.securePayment(payment, this.options.channelToken)));
+        return Response.SecurePayment.fromBody(await this.send(body.securePayment(payment)));
     }
 
     /**
@@ -79,13 +70,12 @@ export class Client {
      * settled payment.
      */
     async regularPayment(payment: Request.RegularPayment): Promise<Response.RegularPayment> {
-        return Response.RegularPayment.fromBody(await this.send(body.regularPayment(payment, this.options.channelToken)));
+        return Response.RegularPayment.fromBody(await this.send(body.regularPayment(payment)));
     }
 
     /**
-     * Give money back out of a payment the provider has settled, whole or in
-     * part. A refund that names no amount gives back everything the payment
-     * has left in it.
+     * Give money back out of a payment the provider has settled, whole or
+     * in part.
      */
     async refundPayment(refund: Request.RefundPayment): Promise<Response.GiveBack> {
         return Response.GiveBack.fromBody(await this.send(body.refundPayment(refund)));
@@ -93,75 +83,42 @@ export class Client {
 
     /**
      * Take back the whole of a payment the provider has not settled yet.
-     * Anything less than the whole of it goes back as a refund instead.
      */
     async cancelPayment(cancel: Request.CancelPayment): Promise<Response.GiveBack> {
         return Response.GiveBack.fromBody(await this.send(body.cancelPayment(cancel)));
     }
 
     /**
-     * How a payment went. A customer sent to their bank comes back to the
-     * merchant with the payment's token and a hint at how it went; the hint
-     * is worth nothing on its own, and this call says what really became of it.
+     * Payments as they stand — by token, every attempt under one of the
+     * merchant's own references, or the ones made between two days; the
+     * last seven days when nothing is named.
      */
-    async retrievePayment(payment: Request.RetrievePayment): Promise<Response.Payment> {
-        return Response.Payment.fromBody(await this.send(body.retrievePayment(payment)));
+    async retrievePayments(payments: Request.RetrievePayments = {}): Promise<Response.PaymentList> {
+        return Response.PaymentList.fromBody(await this.send(body.retrievePayments(payments)));
     }
 
     /**
-     * How the last payment under one of the merchant's own references went,
-     * for the merchant that sent a payment and never heard back.
-     */
-    async retrievePaymentByReference(payment: Request.RetrievePaymentByReference): Promise<Response.Payment> {
-        return Response.Payment.fromBody(await this.send(body.retrievePaymentByReference(payment, this.options.channelToken)));
-    }
-
-    /**
-     * Every payment attempt on a channel within a stretch of days, oldest
-     * first, with each one's state, amount and what became of its money.
-     */
-    async retrievePaymentsByChannelReference(payments: Request.RetrievePaymentsByChannelReference = {}): Promise<Response.PaymentList> {
-        return Response.PaymentList.fromBody(await this.send(body.retrievePaymentsByChannelReference(payments, this.options.channelToken)));
-    }
-
-    /**
-     * Ask what the gateway's provider knows about a card by the head of its
-     * number, and how an amount may be paid off on it. Nothing is charged and
-     * nothing is written down.
+     * Ask what is known about a card from the head of its number, and how
+     * the amount may be paid off on it. Nothing is charged and nothing is
+     * written down.
      */
     async retrieveBin(retrieveBin: Request.RetrieveBin): Promise<Response.Bin> {
         return Response.Bin.fromBody(await this.send(body.retrieveBin(retrieveBin)));
     }
 
     /**
-     * Open an order to be paid on the gateway's own page, or write over the
-     * open one already under the same reference. Nothing is charged here;
-     * the customer is sent to the address that comes back and pays there.
+     * Open an order to be paid on the gateway's own page, or overwrite the
+     * open one already under the same reference.
      */
     async createOrder(order: Request.CreateOrder): Promise<Response.OrderDetails> {
-        return Response.OrderDetails.fromBody(await this.send(body.createOrder(order, this.options.channelToken)));
+        return Response.OrderDetails.fromBody(await this.send(body.createOrder(order)));
     }
 
     /**
-     * Where an order stands, by its token: what it is for, whether it has
-     * been paid and, if so, by which payment.
+     * Orders as they stand, each with its customer.
      */
-    async retrieveOrder(order: Request.RetrieveOrder): Promise<Response.OrderDetails> {
-        return Response.OrderDetails.fromBody(await this.send(body.retrieveOrder(order)));
-    }
-
-    /**
-     * Where the last order under one of the merchant's own references stands.
-     */
-    async retrieveOrderByReference(order: Request.RetrieveOrderByReference): Promise<Response.OrderDetails> {
-        return Response.OrderDetails.fromBody(await this.send(body.retrieveOrderByReference(order, this.options.channelToken)));
-    }
-
-    /**
-     * Every order opened on a channel within a stretch of days, oldest first.
-     */
-    async retrieveOrdersByChannelReference(orders: Request.RetrieveOrdersByChannelReference = {}): Promise<Response.OrderList> {
-        return Response.OrderList.fromBody(await this.send(body.retrieveOrdersByChannelReference(orders, this.options.channelToken)));
+    async retrieveOrders(orders: Request.RetrieveOrders = {}): Promise<Response.OrderList> {
+        return Response.OrderList.fromBody(await this.send(body.retrieveOrders(orders)));
     }
 
     /**
@@ -172,39 +129,24 @@ export class Client {
     }
 
     /**
-     * Open a payment link, or write over the one already under the same
+     * Open a payment link, or overwrite the one already under the same
      * reference. The address that comes back is the link itself.
      */
     async createPaymentLink(paymentLink: Request.CreatePaymentLink): Promise<Response.PaymentLinkDetails> {
-        return Response.PaymentLinkDetails.fromBody(await this.send(body.createPaymentLink(paymentLink, this.options.channelToken)));
+        return Response.PaymentLinkDetails.fromBody(await this.send(body.createPaymentLink(paymentLink)));
     }
 
     /**
-     * A payment link as it stands, by its token, with how many payments
-     * were made on it and the latest fifty of them.
+     * Payment links as they stand, each with the latest fifty payment
+     * attempts made on it and how many there have been in all.
      */
-    async retrievePaymentLink(paymentLink: Request.RetrievePaymentLink): Promise<Response.PaymentLinkDetails> {
-        return Response.PaymentLinkDetails.fromBody(await this.send(body.retrievePaymentLink(paymentLink)));
+    async retrievePaymentLinks(paymentLinks: Request.RetrievePaymentLinks = {}): Promise<Response.PaymentLinkList> {
+        return Response.PaymentLinkList.fromBody(await this.send(body.retrievePaymentLinks(paymentLinks)));
     }
 
     /**
-     * A payment link as it stands, by the merchant's own reference for it.
-     */
-    async retrievePaymentLinkByReference(paymentLink: Request.RetrievePaymentLinkByReference): Promise<Response.PaymentLinkDetails> {
-        return Response.PaymentLinkDetails.fromBody(await this.send(body.retrievePaymentLinkByReference(paymentLink, this.options.channelToken)));
-    }
-
-    /**
-     * Every payment link opened on a channel within a stretch of days,
-     * oldest first.
-     */
-    async retrievePaymentLinksByChannelReference(paymentLinks: Request.RetrievePaymentLinksByChannelReference = {}): Promise<Response.PaymentLinkList> {
-        return Response.PaymentLinkList.fromBody(await this.send(body.retrievePaymentLinksByChannelReference(paymentLinks, this.options.channelToken)));
-    }
-
-    /**
-     * Change a payment link: its lines, its day, whether it takes payments.
-     * Only what is sent is written.
+     * Change a payment link: its lines, its last day, whether it takes
+     * payments. Only what is sent is written.
      */
     async updatePaymentLink(paymentLink: Request.UpdatePaymentLink): Promise<Response.PaymentLinkDetails> {
         return Response.PaymentLinkDetails.fromBody(await this.send(body.updatePaymentLink(paymentLink)));
@@ -212,41 +154,24 @@ export class Client {
 
     /**
      * Open a subscription, its first renewal to be paid on the gateway's own
-     * page and the rest taken from the card kept then; or write over the one
+     * page and the rest taken from the card kept then; or overwrite the one
      * already under the same reference while nothing has been paid on it.
      */
     async createSubscription(subscription: Request.CreateSubscription): Promise<Response.SubscriptionDetails> {
-        return Response.SubscriptionDetails.fromBody(await this.send(body.createSubscription(subscription, this.options.channelToken)));
+        return Response.SubscriptionDetails.fromBody(await this.send(body.createSubscription(subscription)));
     }
 
     /**
-     * Where a subscription stands, by its token.
+     * Subscriptions as they stand, each with its customer and the renewal it
+     * is on.
      */
-    async retrieveSubscription(subscription: Request.RetrieveSubscription): Promise<Response.SubscriptionDetails> {
-        return Response.SubscriptionDetails.fromBody(await this.send(body.retrieveSubscription(subscription)));
-    }
-
-    /**
-     * Where the last subscription under one of the merchant's own references
-     * stands.
-     */
-    async retrieveSubscriptionByReference(subscription: Request.RetrieveSubscriptionByReference): Promise<Response.SubscriptionDetails> {
-        return Response.SubscriptionDetails.fromBody(await this.send(body.retrieveSubscriptionByReference(subscription, this.options.channelToken)));
-    }
-
-    /**
-     * Every subscription opened on a channel within a stretch of days,
-     * oldest first.
-     */
-    async retrieveSubscriptionsByChannelReference(subscriptions: Request.RetrieveSubscriptionsByChannelReference = {}): Promise<Response.SubscriptionList> {
-        return Response.SubscriptionList.fromBody(await this.send(body.retrieveSubscriptionsByChannelReference(subscriptions, this.options.channelToken)));
+    async retrieveSubscriptions(subscriptions: Request.RetrieveSubscriptions = {}): Promise<Response.SubscriptionList> {
+        return Response.SubscriptionList.fromBody(await this.send(body.retrieveSubscriptions(subscriptions)));
     }
 
     /**
      * Change a subscription, or call it off with the status `cancelled`.
-     * Only what is sent is written. Nothing is given back on a
-     * cancellation: the customer is served to the end of what they paid
-     * for, and nothing is charged after that.
+     * Only what is sent is written.
      */
     async updateSubscription(subscription: Request.UpdateSubscription): Promise<Response.SubscriptionDetails> {
         return Response.SubscriptionDetails.fromBody(await this.send(body.updateSubscription(subscription)));
@@ -256,33 +181,27 @@ export class Client {
      * Keep a card for a customer without making a payment on it.
      */
     async createSavedCard(savedCard: Request.CreateSavedCard): Promise<Response.SavedCardDetails> {
-        return Response.SavedCardDetails.fromBody(await this.send(body.createSavedCard(savedCard, this.options.channelToken)));
+        return Response.SavedCardDetails.fromBody(await this.send(body.createSavedCard(savedCard)));
     }
 
     /**
-     * One kept card, by its token.
+     * Kept cards — by token, every card of a customer by their reference, or
+     * the ones kept between two days — each with its customer, the default
+     * first.
      */
-    async retrieveSavedCard(savedCard: Request.RetrieveSavedCard): Promise<Response.SavedCardDetails> {
-        return Response.SavedCardDetails.fromBody(await this.send(body.retrieveSavedCard(savedCard)));
+    async retrieveSavedCards(savedCards: Request.RetrieveSavedCards = {}): Promise<Response.SavedCardList> {
+        return Response.SavedCardList.fromBody(await this.send(body.retrieveSavedCards(savedCards)));
     }
 
     /**
-     * The cards kept for a customer, the default one first.
-     */
-    async retrieveSavedCardsByReference(savedCards: Request.RetrieveSavedCardsByReference): Promise<Response.SavedCardList> {
-        return Response.SavedCardList.fromBody(await this.send(body.retrieveSavedCardsByReference(savedCards, this.options.channelToken)));
-    }
-
-    /**
-     * Make one of a customer's kept cards the one they pay with unless they
-     * say otherwise.
+     * Make a kept card the one its customer pays with by default.
      */
     async updateSavedCard(savedCard: Request.UpdateSavedCard): Promise<Response.SavedCardDetails> {
         return Response.SavedCardDetails.fromBody(await this.send(body.updateSavedCard(savedCard)));
     }
 
     /**
-     * Let go of one of a customer's kept cards, at the provider and here.
+     * Let go of a kept card, at the provider and with the gateway.
      */
     async deleteSavedCard(savedCard: Request.DeleteSavedCard): Promise<Response.DeletedSavedCard> {
         return Response.DeletedSavedCard.fromBody(await this.send(body.deleteSavedCard(savedCard)));
@@ -329,30 +248,26 @@ export class Client {
     /**
      * Sign what is being asked for, hand it to the gateway and read the
      * answer back. The body is signed exactly as it is sent, character for
-     * character, so it is written once and used for both; a GET sends no
-     * body and signs the empty string.
+     * character, so it is written once and used for both.
      */
     private async send(message: Message): Promise<Body> {
         const path = this.path(message.path);
-        const payload = message.body === null ? '' : JSON.stringify(message.body);
+        const payload = JSON.stringify(message.body);
         const headers: Record<string, string> = {
             [Client.API_KEY_HEADER]: this.options.apiKey,
-            ...this.signature.headers(message.method, path, payload),
+            ...this.signature.headers('POST', path, payload),
             Accept: 'application/json',
+            'Content-Type': 'application/json',
         };
-
-        if (message.method !== 'GET') {
-            headers['Content-Type'] = 'application/json';
-        }
 
         let response: globalThis.Response;
         let text: string;
 
         try {
             response = await this.fetch(this.url(path), {
-                method: message.method,
+                method: 'POST',
                 headers,
-                body: message.method === 'GET' ? undefined : payload,
+                body: payload,
                 signal: AbortSignal.timeout(this.options.timeout ?? 60_000),
             });
             text = await response.text();
@@ -360,7 +275,7 @@ export class Client {
             throw new TransportError(`Ödeme geçidine ulaşılamadı: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
         }
 
-        return this.read(response, text, message.method, path);
+        return this.read(response, text, 'POST', path);
     }
 
     /**

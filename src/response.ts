@@ -185,31 +185,28 @@ export class PaymentCustomer {
 }
 
 /**
- * The customer an order or a subscription is for, as it was written: the
- * merchant's key for them — or the one the gateway made up for a payer
- * nobody named — where the bill goes, and where the goods go when somebody
- * said.
+ * Who an order or a subscription is for, as the gateway holds them: the
+ * merchant's own key for them, where the bill goes, and where the goods go
+ * when somebody said.
  */
 export class NamedCustomer {
-    declare readonly reference: string;
-    declare readonly billingAddress: Address;
+    /** The key the merchant keeps them under; null for somebody the team does not keep. */
+    declare readonly reference: string | null;
+    /** Where the bill goes; null until somebody has said. */
+    declare readonly billingAddress: Address | null;
     declare readonly shippingAddress: Address | null;
 
     constructor(fields: Fields<NamedCustomer>) {
         Object.assign(this, fields);
     }
 
-    /** Whether the gateway made the key up, for a payer nobody named. */
-    isGuest(): boolean {
-        return this.reference.startsWith('guest-');
-    }
-
     static fromBody(customer: Body): NamedCustomer {
+        const billing = optionalObject(customer.billing_address);
         const shipping = optionalObject(customer.shipping_address);
 
         return new NamedCustomer({
-            reference: string(customer.reference),
-            billingAddress: Address.fromBody(object(customer.billing_address)),
+            reference: said(customer.reference),
+            billingAddress: billing === null ? null : Address.fromBody(billing),
             shippingAddress: shipping === null ? null : Address.fromBody(shipping),
         });
     }
@@ -252,12 +249,16 @@ export class SavedCard {
     /** Whether this is the card the customer pays with unless they say otherwise. */
     declare readonly isDefault: boolean;
     declare readonly createdAt: string | null;
+    /** Who the card is kept for; listed cards only, the other answers carry it beside the card. */
+    declare readonly customer: SavedCardCustomer | null;
 
     constructor(fields: Fields<SavedCard>) {
         Object.assign(this, fields);
     }
 
     static fromBody(card: Body): SavedCard {
+        const customer = optionalObject(card.customer);
+
         return new SavedCard({
             token: string(card.token),
             paymentProviderToken: optionalString(card.payment_provider_token),
@@ -269,20 +270,20 @@ export class SavedCard {
             expiryYear: string(card.expiry_year),
             isDefault: boolean(card.is_default),
             createdAt: said(card.created_at),
+            customer: customer === null ? null : SavedCardCustomer.fromBody(customer),
         });
     }
 }
 
 /**
- * Which payment it is: its token, the channel it came in on, the
- * merchant's own reference for it, and what became of its money.
+ * Which payment it is: its token, the merchant's own reference for it, and
+ * what became of its money.
  */
 export class TransactionReference {
     /** The payment's token in the gateway, which names it again to ask after or give back. */
     declare readonly token: string;
-    declare readonly channelToken: string;
     /** The reference the payment was made under in the calling system. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     /** What became of the money: paid, cancelled, refunded, partially refunded. */
     declare readonly paymentStatus: Known<PaymentStatus> | null;
 
@@ -293,8 +294,7 @@ export class TransactionReference {
     static fromBody(transaction: Body): TransactionReference {
         return new TransactionReference({
             token: string(transaction.token),
-            channelToken: string(transaction.channel_token),
-            channelReference: string(transaction.channel_reference),
+            reference: string(transaction.reference),
             paymentStatus: said(transaction.payment_status),
         });
     }
@@ -320,10 +320,8 @@ function isFinished(status: string | null): boolean {
 export class PaymentTransaction {
     /** The payment's token in the gateway, which names it again to ask after or give back. */
     declare readonly token: string;
-    /** The channel the payment came in on. */
-    declare readonly channelToken: string;
     /** The reference the payment was made under in the calling system. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     /** The attempt's state. */
     declare readonly status: Known<TransactionStatus> | null;
     /** What became of the money. */
@@ -363,8 +361,7 @@ export class PaymentTransaction {
     static fromBody(transaction: Body): PaymentTransaction {
         return new PaymentTransaction({
             token: string(transaction.token),
-            channelToken: string(transaction.channel_token),
-            channelReference: string(transaction.channel_reference),
+            reference: string(transaction.reference),
             status: said(transaction.status),
             paymentStatus: said(transaction.payment_status),
             securityType: said(transaction.security_type),
@@ -511,14 +508,14 @@ export class GiveBack extends Payment {
 /**
  * A word the gateway sent about something of the merchant's: an order
  * paid, a link paid, a subscription's state changed, a payment finished,
- * money given back. It goes to the addresses set for the thing's channel
+ * money given back. It goes to the addresses the team set for the event
  * under Webhook in the panel, as plain JSON signed the way every answer is.
  *
  * It is a notification, never the answer. It names the thing by token —
  * and the payment beside it when money moved — and nothing else; ask the
- * gateway what became of it (`retrieveOrder`, `retrievePaymentLink`,
- * `retrieveSubscription`, `retrievePayment`) and act on that. A word may
- * arrive more than once; the id tells the copies apart.
+ * gateway what became of it (`retrieveOrders`, `retrievePaymentLinks`,
+ * `retrieveSubscriptions`, `retrievePayments`, by its token) and act on
+ * that. A word may arrive more than once; the id tells the copies apart.
  */
 export class Webhook {
     /** The word's own token, the same on every delivery of it. */
@@ -558,10 +555,8 @@ export class Webhook {
 export class Transaction {
     /** The payment's token in the gateway, which names it again to ask after or give back. */
     declare readonly token: string;
-    /** The channel the payment came in on. */
-    declare readonly channelToken: string;
     /** The reference the payment was made under in the calling system. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     /** The attempt's state. */
     declare readonly status: Known<TransactionStatus>;
     /** What became of the money. */
@@ -591,6 +586,8 @@ export class Transaction {
     declare readonly paymentLinkToken: string | null;
     /** The token of the subscription this attempt paid a renewal of, when it did. */
     declare readonly subscriptionToken: string | null;
+    /** The card the payment kept, when it asked to keep one and went through; null otherwise. */
+    declare readonly savedCard: SavedCard | null;
 
     constructor(fields: Fields<Transaction>) {
         Object.assign(this, fields);
@@ -607,13 +604,14 @@ export class Transaction {
     }
 
     static fromBody(transaction: Body): Transaction {
+        const savedCard = optionalObject(transaction.saved_card);
+
         const customer = optionalObject(transaction.customer);
         const conversion = optionalObject(transaction.conversion);
 
         return new Transaction({
             token: string(transaction.token),
-            channelToken: string(transaction.channel_token),
-            channelReference: string(transaction.channel_reference),
+            reference: string(transaction.reference),
             status: string(transaction.status),
             paymentStatus: string(transaction.payment_status),
             securityType: string(transaction.security_type),
@@ -630,27 +628,31 @@ export class Transaction {
             orderToken: said(object(transaction.order).token),
             paymentLinkToken: said(object(transaction.payment_link).token),
             subscriptionToken: said(object(transaction.subscription).token),
+            savedCard: savedCard === null ? null : SavedCard.fromBody(savedCard),
         });
     }
 }
 
 /**
- * Every payment attempt made on a channel within a stretch of days, oldest
- * first, the ones the bank turned away included.
+ * Payments asked after, each with its state, amount, customer and what
+ * became of its money, the ones the bank turned away included. The answer is always a list, oldest first, and an empty one when
+ * nothing matched. The days are the ones the gateway used, when the records
+ * were asked for by the days they were made on: the ones asked for, or the
+ * last seven when none were.
  */
 export class PaymentList {
     declare readonly result: Result;
-    /** The first day listed, `YYYY-MM-DD` in the team's own time. */
-    declare readonly createdFrom: string;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
-    declare readonly createdTo: string;
+    declare readonly createdTo: string | null;
     declare readonly payments: Transaction[];
 
     constructor(fields: Fields<PaymentList>) {
         Object.assign(this, fields);
     }
 
-    /** The attempts that went through. */
+    /** The payments that went through. */
     successful(): Transaction[] {
         return this.payments.filter((payment) => payment.isSuccessful());
     }
@@ -658,9 +660,9 @@ export class PaymentList {
     static fromBody(body: Body): PaymentList {
         return new PaymentList({
             result: Result.fromBody(body),
-            createdFrom: string(body.created_from),
-            createdTo: string(body.created_to),
-            payments: list(body.payments).map((payment) => Transaction.fromBody(object(payment))),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            payments: list(body.payments).map((entry) => Transaction.fromBody(object(entry))),
         });
     }
 }
@@ -671,7 +673,7 @@ export class PaymentList {
  */
 export class Item {
     /** The merchant's own key for what is on the line, if it gave one. */
-    declare readonly channelReference: string | null;
+    declare readonly reference: string | null;
     declare readonly name: string;
     /** The picture the line is shown with, if any. */
     declare readonly image: string | null;
@@ -687,7 +689,7 @@ export class Item {
 
     static fromBody(item: Body): Item {
         return new Item({
-            channelReference: said(item.channel_reference),
+            reference: said(item.reference),
             name: string(item.name),
             image: said(item.image),
             quantity: integer(item.quantity),
@@ -698,10 +700,13 @@ export class Item {
 }
 
 /**
- * One way the goods may be sent, as the merchant offered it.
+ * The way the payer picked to have the goods sent, from the team's own
+ * list, as it was copied onto the order or the subscription. The amount
+ * includes the tax.
  */
 export class ShippingMethod {
-    declare readonly handle: string;
+    /** The merchant's own key for the way, on the team's list. */
+    declare readonly reference: string;
     declare readonly title: string;
     /** What it costs, tax included. */
     declare readonly amount: string;
@@ -714,7 +719,7 @@ export class ShippingMethod {
 
     static fromBody(method: Body): ShippingMethod {
         return new ShippingMethod({
-            handle: string(method.handle),
+            reference: string(method.reference),
             title: string(method.title),
             amount: string(method.amount),
             taxRate: string(method.tax_rate),
@@ -732,18 +737,14 @@ export class ShippingMethod {
 export class Order {
     /** The order's token in the gateway; name it to ask after it or change it. */
     declare readonly token: string;
-    /** The channel the order was opened on. */
-    declare readonly channelToken: string;
     /** The reference the order is known by in the calling system. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     declare readonly description: string | null;
     /** The account the order is paid through; null where the team's Gate rules and default account decide. */
     declare readonly paymentProviderToken: string | null;
     /** Where the order stands: open until it is paid, then paid. */
     declare readonly status: Known<OrderStatus>;
     declare readonly items: Item[];
-    /** The ways the goods may be sent, as offered. */
-    declare readonly shippingMethods: ShippingMethod[];
     /** The way the payer picked; null until they have, or when none was offered. */
     declare readonly shippingMethod: ShippingMethod | null;
     /** What the lines come to before tax. */
@@ -796,13 +797,11 @@ export class Order {
 
         return new Order({
             token: string(order.token),
-            channelToken: string(order.channel_token),
-            channelReference: string(order.channel_reference),
+            reference: string(order.reference),
             description: said(order.description),
             paymentProviderToken: said(order.payment_provider_token),
             status: string(order.status),
             items: list(order.items).map((item) => Item.fromBody(object(item))),
-            shippingMethods: list(order.shipping_methods).map((method) => ShippingMethod.fromBody(object(method))),
             shippingMethod: shippingMethod === null ? null : ShippingMethod.fromBody(shippingMethod),
             subtotal: string(order.subtotal),
             shippingAmount: string(order.shipping_amount),
@@ -845,14 +844,17 @@ export class OrderDetails {
 }
 
 /**
- * Every order opened on a channel within a stretch of days, oldest first.
+ * Orders asked after, each with its customer on `Order.customer`. The answer is always a list, oldest first, and an empty one when
+ * nothing matched. The days are the ones the gateway used, when the records
+ * were asked for by the days they were made on: the ones asked for, or the
+ * last seven when none were.
  */
 export class OrderList {
     declare readonly result: Result;
-    /** The first day listed, `YYYY-MM-DD` in the team's own time. */
-    declare readonly createdFrom: string;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
-    declare readonly createdTo: string;
+    declare readonly createdTo: string | null;
     declare readonly orders: Order[];
 
     constructor(fields: Fields<OrderList>) {
@@ -862,9 +864,9 @@ export class OrderList {
     static fromBody(body: Body): OrderList {
         return new OrderList({
             result: Result.fromBody(body),
-            createdFrom: string(body.created_from),
-            createdTo: string(body.created_to),
-            orders: list(body.orders).map((order) => Order.fromSummary(object(order))),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            orders: list(body.orders).map((entry) => Order.fromSummary(object(entry))),
         });
     }
 }
@@ -876,10 +878,8 @@ export class OrderList {
 export class PaymentLink {
     /** The link's token in the gateway; name it to ask after it or change it. */
     declare readonly token: string;
-    /** The channel the link sells on; null for the team's own ödemehub channel. */
-    declare readonly channelToken: string | null;
     /** The reference the link is known by in the calling system; LINK1, LINK2… when none was given. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     declare readonly description: string | null;
     /** The account the link is paid through; null where the team's Gate rules and default account decide. */
     declare readonly paymentProviderToken: string | null;
@@ -899,16 +899,24 @@ export class PaymentLink {
     /** The link itself, while it can be paid; null otherwise. */
     declare readonly checkoutUrl: string | null;
     declare readonly createdAt: string | null;
+    /** The latest attempts made on the link, at most fifty, newest first, the refused ones included; listed links only. */
+    declare readonly transactions: Transaction[];
+    /** How many attempts have been made on the link in all, however many are listed; null but on a listed link. */
+    declare readonly transactionsCount: number | null;
 
     constructor(fields: Fields<PaymentLink>) {
         Object.assign(this, fields);
     }
 
+    /** The listed attempts that went through. */
+    successful(): Transaction[] {
+        return this.transactions.filter((transaction) => transaction.isSuccessful());
+    }
+
     static fromBody(link: Body): PaymentLink {
         return new PaymentLink({
             token: string(link.token),
-            channelToken: said(link.channel_token),
-            channelReference: string(link.channel_reference),
+            reference: string(link.reference),
             description: said(link.description),
             paymentProviderToken: said(link.payment_provider_token),
             items: list(link.items).map((item) => Item.fromBody(object(item))),
@@ -921,36 +929,6 @@ export class PaymentLink {
             expiresAt: said(link.expires_at),
             checkoutUrl: said(link.checkout_url),
             createdAt: said(link.created_at),
-        });
-    }
-}
-
-/**
- * The answer about one payment link: opened, changed or asked after.
- */
-export class PaymentLinkDetails {
-    declare readonly result: Result;
-    declare readonly paymentLink: PaymentLink;
-    /** The latest attempts made on the link, at most fifty, newest first. Filled by `retrievePaymentLink` only; empty on every other answer. */
-    declare readonly transactions: Transaction[];
-    /** How many attempts have been made on the link in all, however many are listed; null on every answer but `retrievePaymentLink`. */
-    declare readonly transactionsCount: number | null;
-
-    constructor(fields: Fields<PaymentLinkDetails>) {
-        Object.assign(this, fields);
-    }
-
-    /** The listed attempts that went through. */
-    successful(): Transaction[] {
-        return this.transactions.filter((transaction) => transaction.isSuccessful());
-    }
-
-    static fromBody(body: Body): PaymentLinkDetails {
-        const link = object(body.payment_link);
-
-        return new PaymentLinkDetails({
-            result: Result.fromBody(body),
-            paymentLink: PaymentLink.fromBody(link),
             transactions: list(link.transactions).map((transaction) => Transaction.fromBody(object(transaction))),
             transactionsCount: optionalInteger(link.transactions_count),
         });
@@ -958,15 +936,39 @@ export class PaymentLinkDetails {
 }
 
 /**
- * Every payment link opened on a channel within a stretch of days, oldest
- * first.
+ * The answer to opening or changing a payment link: the link as it now
+ * stands. Its payments are on the link when it is asked after with
+ * `retrievePaymentLinks`.
+ */
+export class PaymentLinkDetails {
+    declare readonly result: Result;
+    declare readonly paymentLink: PaymentLink;
+
+    constructor(fields: Fields<PaymentLinkDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): PaymentLinkDetails {
+        return new PaymentLinkDetails({
+            result: Result.fromBody(body),
+            paymentLink: PaymentLink.fromBody(object(body.payment_link)),
+        });
+    }
+}
+
+/**
+ * Payment links asked after, each with how many payments were made on it
+ * and the latest fifty of them. The answer is always a list, oldest first, and an empty one when
+ * nothing matched. The days are the ones the gateway used, when the records
+ * were asked for by the days they were made on: the ones asked for, or the
+ * last seven when none were.
  */
 export class PaymentLinkList {
     declare readonly result: Result;
-    /** The first day listed, `YYYY-MM-DD` in the team's own time. */
-    declare readonly createdFrom: string;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
-    declare readonly createdTo: string;
+    declare readonly createdTo: string | null;
     declare readonly paymentLinks: PaymentLink[];
 
     constructor(fields: Fields<PaymentLinkList>) {
@@ -976,9 +978,9 @@ export class PaymentLinkList {
     static fromBody(body: Body): PaymentLinkList {
         return new PaymentLinkList({
             result: Result.fromBody(body),
-            createdFrom: string(body.created_from),
-            createdTo: string(body.created_to),
-            paymentLinks: list(body.payment_links).map((link) => PaymentLink.fromBody(object(link))),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            paymentLinks: list(body.payment_links).map((entry) => PaymentLink.fromBody(object(entry))),
         });
     }
 }
@@ -1028,10 +1030,8 @@ export class Renewal {
 export class Subscription {
     /** The subscription's token in the gateway; name it to ask after it or change it. */
     declare readonly token: string;
-    /** The channel the subscription was opened on. */
-    declare readonly channelToken: string;
     /** The reference the subscription is known by in the calling system. */
-    declare readonly channelReference: string;
+    declare readonly reference: string;
     declare readonly description: string | null;
     /** The account the renewals are taken at; null where the team's Gate rules and default account decided. */
     declare readonly paymentProviderToken: string | null;
@@ -1044,8 +1044,6 @@ export class Subscription {
     /** How many renewals have been paid so far. */
     declare readonly renewalsPaid: number;
     declare readonly items: Item[];
-    /** The ways the goods may be sent, as offered. */
-    declare readonly shippingMethods: ShippingMethod[];
     /** The way the payer picked; null until they have, or when none was offered. */
     declare readonly shippingMethod: ShippingMethod | null;
     declare readonly subtotal: string;
@@ -1132,8 +1130,7 @@ export class Subscription {
 
         return new Subscription({
             token: string(subscription.token),
-            channelToken: string(subscription.channel_token),
-            channelReference: string(subscription.channel_reference),
+            reference: string(subscription.reference),
             description: said(subscription.description),
             paymentProviderToken: said(subscription.payment_provider_token),
             status: string(subscription.status),
@@ -1141,7 +1138,6 @@ export class Subscription {
             renewalLimit: optionalInteger(subscription.renewal_limit),
             renewalsPaid: integer(subscription.renewals_paid),
             items: list(subscription.items).map((item) => Item.fromBody(object(item))),
-            shippingMethods: list(subscription.shipping_methods).map((method) => ShippingMethod.fromBody(object(method))),
             shippingMethod: shippingMethod === null ? null : ShippingMethod.fromBody(shippingMethod),
             subtotal: string(subscription.subtotal),
             shippingAmount: string(subscription.shipping_amount),
@@ -1186,15 +1182,18 @@ export class SubscriptionDetails {
 }
 
 /**
- * Every subscription opened on a channel within a stretch of days, oldest
- * first.
+ * Subscriptions asked after, each with its customer on
+ * `Subscription.customer`. The answer is always a list, oldest first, and an empty one when
+ * nothing matched. The days are the ones the gateway used, when the records
+ * were asked for by the days they were made on: the ones asked for, or the
+ * last seven when none were.
  */
 export class SubscriptionList {
     declare readonly result: Result;
-    /** The first day listed, `YYYY-MM-DD` in the team's own time. */
-    declare readonly createdFrom: string;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
-    declare readonly createdTo: string;
+    declare readonly createdTo: string | null;
     declare readonly subscriptions: Subscription[];
 
     constructor(fields: Fields<SubscriptionList>) {
@@ -1204,9 +1203,9 @@ export class SubscriptionList {
     static fromBody(body: Body): SubscriptionList {
         return new SubscriptionList({
             result: Result.fromBody(body),
-            createdFrom: string(body.created_from),
-            createdTo: string(body.created_to),
-            subscriptions: list(body.subscriptions).map((subscription) => Subscription.fromSummary(object(subscription))),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            subscriptions: list(body.subscriptions).map((entry) => Subscription.fromSummary(object(entry))),
         });
     }
 }
@@ -1278,7 +1277,7 @@ export class Bin {
 }
 
 /**
- * The answer about one kept card: kept, asked after or made the default.
+ * The answer about one kept card: kept or made the default.
  */
 export class SavedCardDetails {
     declare readonly result: Result;
@@ -1303,19 +1302,25 @@ export class SavedCardDetails {
 }
 
 /**
- * The cards kept for a customer, the default one first.
+ * Kept cards asked after, each with the customer it is kept for. A
+ * customer's cards come with the one they pay with by default first. The answer is always a list, oldest first, and an empty one when
+ * nothing matched. The days are the ones the gateway used, when the records
+ * were asked for by the days they were made on: the ones asked for, or the
+ * last seven when none were.
  */
 export class SavedCardList {
     declare readonly result: Result;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
+    /** The last day listed, the same way. */
+    declare readonly createdTo: string | null;
     declare readonly savedCards: SavedCard[];
-    /** The customer the cards belong to, as they were named. */
-    declare readonly customer: SavedCardCustomer;
 
     constructor(fields: Fields<SavedCardList>) {
         Object.assign(this, fields);
     }
 
-    /** The card the customer pays with unless they say otherwise, if they have one. */
+    /** The card the customer pays with unless they say otherwise, when the cards were asked for by the customer's reference. */
     default(): SavedCard | null {
         return this.savedCards.find((card) => card.isDefault) ?? null;
     }
@@ -1323,8 +1328,9 @@ export class SavedCardList {
     static fromBody(body: Body): SavedCardList {
         return new SavedCardList({
             result: Result.fromBody(body),
-            savedCards: list(body.saved_cards).map((card) => SavedCard.fromBody(object(card))),
-            customer: SavedCardCustomer.fromBody(object(body.customer)),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            savedCards: list(body.saved_cards).map((entry) => SavedCard.fromBody(object(entry))),
         });
     }
 }

@@ -6,16 +6,12 @@ import type * as Request from './request.js';
 export type Body = Record<string, unknown>;
 
 /**
- * An endpoint under the team's gateway, the method it is reached with and
- * the body sent to it. The body is built with the client's channel handed
- * in, because a message that speaks for a channel puts it where its own
- * endpoint expects it; one that does not, such as a refund, simply never
- * reads it. A message sent with GET carries no body at all.
+ * An endpoint under the team's gateway and the body posted to it. Every
+ * endpoint is reached with POST.
  */
 export interface Message {
-    method: 'GET' | 'POST';
     path: string;
-    body: Body | null;
+    body: Body;
 }
 
 /**
@@ -35,11 +31,7 @@ function given(body: Body): Body {
 }
 
 function post(path: string, body: Body): Message {
-    return { method: 'POST', path, body };
-}
-
-function get(path: string): Message {
-    return { method: 'GET', path, body: null };
+    return { path, body };
 }
 
 /**
@@ -90,29 +82,20 @@ function customer(customer: Request.Customer | undefined): Body | undefined {
 
 function item(item: Request.Item): Body {
     return said({
-        channel_reference: item.channelReference,
+        reference: item.reference,
         name: item.name,
         image: item.image,
         quantity: item.quantity,
         unit_amount: item.unitAmount,
         tax_rate: item.taxRate,
+        save_as_product: item.saveAsProduct,
     });
 }
 
-function shippingMethod(method: Request.ShippingMethod): Body {
-    return {
-        handle: method.handle,
-        title: method.title,
-        amount: method.amount,
-        tax_rate: method.taxRate,
-    };
-}
-
-function payment(payment: Request.Payment, channelToken: string): Body {
+function payment(payment: Request.Payment): Body {
     return said({
         transaction: said({
-            channel_token: payment.channelToken ?? channelToken,
-            channel_reference: payment.channelReference,
+            reference: payment.reference,
             payment_provider_token: payment.paymentProviderToken,
             amount: payment.amount,
             base_amount: payment.baseAmount,
@@ -126,8 +109,8 @@ function payment(payment: Request.Payment, channelToken: string): Body {
     });
 }
 
-export function securePayment(message: Request.SecurePayment, channelToken: string): Message {
-    const body = payment(message, channelToken);
+export function securePayment(message: Request.SecurePayment): Message {
+    const body = payment(message);
 
     body.transaction = said({
         ...(body.transaction as Body),
@@ -137,8 +120,8 @@ export function securePayment(message: Request.SecurePayment, channelToken: stri
     return post('secure-payment', body);
 }
 
-export function regularPayment(message: Request.RegularPayment, channelToken: string): Message {
-    return post('regular-payment', payment(message, channelToken));
+export function regularPayment(message: Request.RegularPayment): Message {
+    return post('regular-payment', payment(message));
 }
 
 export function refundPayment(message: Request.RefundPayment): Message {
@@ -152,31 +135,21 @@ export function cancelPayment(message: Request.CancelPayment): Message {
     return post('cancel-payment', { transaction: { token: message.token } });
 }
 
-export function retrievePayment(message: Request.RetrievePayment): Message {
-    return get(`retrieve-payment/${token(message.token)}`);
-}
-
-function byReference(path: string, message: Request.RetrieveByReference, channelToken: string): Message {
-    return post(path, {
-        channel_token: message.channelToken ?? channelToken,
-        channel_reference: message.channelReference,
-    });
-}
-
-function byChannelReference(path: string, message: Request.RetrieveByChannelReference, channelToken: string): Message {
+/**
+ * Asking after records of one kind, by token, by reference or by days; the
+ * reference travels under the name the endpoint gives it.
+ */
+function retrieve(path: string, message: Request.Retrieve, referenceField = 'reference'): Message {
     return post(path, said({
-        channel_token: message.channelToken ?? channelToken,
+        token: message.token,
+        [referenceField]: message.reference,
         created_from: message.createdFrom,
         created_to: message.createdTo,
     }));
 }
 
-export function retrievePaymentByReference(message: Request.RetrievePaymentByReference, channelToken: string): Message {
-    return byReference('retrieve-payment-by-reference', message, channelToken);
-}
-
-export function retrievePaymentsByChannelReference(message: Request.RetrievePaymentsByChannelReference, channelToken: string): Message {
-    return byChannelReference('retrieve-payments-by-channel-reference', message, channelToken);
+export function retrievePayments(message: Request.RetrievePayments): Message {
+    return retrieve('retrieve-payments', message);
 }
 
 export function retrieveBin(message: Request.RetrieveBin): Message {
@@ -194,58 +167,45 @@ export function retrieveBin(message: Request.RetrieveBin): Message {
  * The fields an order and a subscription share, under their group, as a
  * new one is opened with them.
  */
-function checkout(message: Request.CheckoutMessage, channelToken: string): Body {
+function checkout(message: Request.CheckoutMessage): Body {
     return said({
-        channel_token: message.channelToken ?? channelToken,
-        channel_reference: message.channelReference,
+        reference: message.reference,
         description: message.description,
         payment_provider_token: message.paymentProviderToken,
         currency: message.currency,
         success_url: message.successUrl,
         cancel_url: message.cancelUrl,
-        requires_shipping_address: message.requiresShippingAddress,
+        requires_shipping: message.requiresShipping,
         items: message.items.map(item),
-        shipping_methods: message.shippingMethods?.map(shippingMethod),
     });
 }
 
 /**
  * The fields an order and a subscription share, as a change sends them:
- * only what was given, `null` included, and the channel only when the
- * message names one.
+ * only what was given, `null` included.
  */
 function checkoutChange(message: Request.UpdateCheckoutMessage): Body {
     return given({
-        channel_token: message.channelToken,
-        channel_reference: message.channelReference,
+        reference: message.reference,
         description: message.description,
         payment_provider_token: message.paymentProviderToken,
         currency: message.currency,
         success_url: message.successUrl,
         cancel_url: message.cancelUrl,
-        requires_shipping_address: message.requiresShippingAddress,
+        requires_shipping: message.requiresShipping,
         items: message.items?.map(item),
-        shipping_methods: message.shippingMethods === null ? null : message.shippingMethods?.map(shippingMethod),
     });
 }
 
-export function createOrder(message: Request.CreateOrder, channelToken: string): Message {
+export function createOrder(message: Request.CreateOrder): Message {
     return post('create-order', said({
-        order: checkout(message, channelToken),
+        order: checkout(message),
         customer: customer(message.customer),
     }));
 }
 
-export function retrieveOrder(message: Request.RetrieveOrder): Message {
-    return get(`retrieve-order/${token(message.token)}`);
-}
-
-export function retrieveOrderByReference(message: Request.RetrieveOrderByReference, channelToken: string): Message {
-    return byReference('retrieve-order-by-reference', message, channelToken);
-}
-
-export function retrieveOrdersByChannelReference(message: Request.RetrieveOrdersByChannelReference, channelToken: string): Message {
-    return byChannelReference('retrieve-orders-by-channel-reference', message, channelToken);
+export function retrieveOrders(message: Request.RetrieveOrders): Message {
+    return retrieve('retrieve-orders', message);
 }
 
 export function updateOrder(message: Request.UpdateOrder): Message {
@@ -256,11 +216,10 @@ export function updateOrder(message: Request.UpdateOrder): Message {
     }));
 }
 
-export function createPaymentLink(message: Request.CreatePaymentLink, channelToken: string): Message {
+export function createPaymentLink(message: Request.CreatePaymentLink): Message {
     return post('create-payment-link', {
         payment_link: said({
-            channel_token: message.channelToken === undefined ? channelToken : message.channelToken,
-            channel_reference: message.channelReference,
+            reference: message.reference,
             description: message.description,
             payment_provider_token: message.paymentProviderToken,
             currency: message.currency,
@@ -271,31 +230,15 @@ export function createPaymentLink(message: Request.CreatePaymentLink, channelTok
     });
 }
 
-export function retrievePaymentLink(message: Request.RetrievePaymentLink): Message {
-    return get(`retrieve-payment-link/${token(message.token)}`);
-}
-
-export function retrievePaymentLinkByReference(message: Request.RetrievePaymentLinkByReference, channelToken: string): Message {
-    return post('retrieve-payment-link-by-reference', said({
-        channel_token: message.channelToken === undefined ? channelToken : message.channelToken,
-        channel_reference: message.channelReference,
-    }));
-}
-
-export function retrievePaymentLinksByChannelReference(message: Request.RetrievePaymentLinksByChannelReference, channelToken: string): Message {
-    return post('retrieve-payment-links-by-channel-reference', said({
-        channel_token: message.channelToken === undefined ? channelToken : message.channelToken,
-        created_from: message.createdFrom,
-        created_to: message.createdTo,
-    }));
+export function retrievePaymentLinks(message: Request.RetrievePaymentLinks): Message {
+    return retrieve('retrieve-payment-links', message);
 }
 
 export function updatePaymentLink(message: Request.UpdatePaymentLink): Message {
     return post(`update-payment-link/${token(message.token)}`, {
         token: message.token,
         payment_link: given({
-            channel_token: message.channelToken,
-            channel_reference: message.channelReference,
+            reference: message.reference,
             description: message.description,
             payment_provider_token: message.paymentProviderToken,
             currency: message.currency,
@@ -306,10 +249,10 @@ export function updatePaymentLink(message: Request.UpdatePaymentLink): Message {
     });
 }
 
-export function createSubscription(message: Request.CreateSubscription, channelToken: string): Message {
+export function createSubscription(message: Request.CreateSubscription): Message {
     return post('create-subscription', said({
         subscription: said({
-            ...checkout(message, channelToken),
+            ...checkout(message),
             period: message.period,
             renewal_limit: message.renewalLimit,
         }),
@@ -317,16 +260,8 @@ export function createSubscription(message: Request.CreateSubscription, channelT
     }));
 }
 
-export function retrieveSubscription(message: Request.RetrieveSubscription): Message {
-    return get(`retrieve-subscription/${token(message.token)}`);
-}
-
-export function retrieveSubscriptionByReference(message: Request.RetrieveSubscriptionByReference, channelToken: string): Message {
-    return byReference('retrieve-subscription-by-reference', message, channelToken);
-}
-
-export function retrieveSubscriptionsByChannelReference(message: Request.RetrieveSubscriptionsByChannelReference, channelToken: string): Message {
-    return byChannelReference('retrieve-subscriptions-by-channel-reference', message, channelToken);
+export function retrieveSubscriptions(message: Request.RetrieveSubscriptions): Message {
+    return retrieve('retrieve-subscriptions', message);
 }
 
 export function updateSubscription(message: Request.UpdateSubscription): Message {
@@ -342,12 +277,9 @@ export function updateSubscription(message: Request.UpdateSubscription): Message
     }));
 }
 
-export function createSavedCard(message: Request.CreateSavedCard, channelToken: string): Message {
-    return post('create-saved-card', {
-        saved_card: said({
-            channel_token: message.channelToken ?? channelToken,
-            payment_provider_token: message.paymentProviderToken,
-        }),
+export function createSavedCard(message: Request.CreateSavedCard): Message {
+    return post('create-saved-card', said({
+        saved_card: message.paymentProviderToken === undefined ? undefined : { payment_provider_token: message.paymentProviderToken },
         customer: customer(message.customer),
         card: said({
             holder_name: message.card.holderName,
@@ -356,18 +288,11 @@ export function createSavedCard(message: Request.CreateSavedCard, channelToken: 
             expiry_month: message.card.expiryMonth,
             expiry_year: message.card.expiryYear,
         }),
-    });
+    }));
 }
 
-export function retrieveSavedCard(message: Request.RetrieveSavedCard): Message {
-    return get(`retrieve-saved-card/${token(message.token)}`);
-}
-
-export function retrieveSavedCardsByReference(message: Request.RetrieveSavedCardsByReference, channelToken: string): Message {
-    return post('retrieve-saved-cards-by-reference', {
-        channel_token: message.channelToken ?? channelToken,
-        customer_reference: message.customerReference,
-    });
+export function retrieveSavedCards(message: Request.RetrieveSavedCards): Message {
+    return retrieve('retrieve-saved-cards', { ...message, reference: message.customerReference }, 'customer_reference');
 }
 
 export function updateSavedCard(message: Request.UpdateSavedCard): Message {
