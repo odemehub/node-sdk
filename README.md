@@ -29,7 +29,7 @@ const client = new Client({
 
 Gizli anahtar hiçbir zaman tel üzerinden gitmez; yalnızca imza üretmekte ve doğrulamakta kullanılır. Anahtarları kodun içine yazmayın, ortam değişkeninde tutun.
 
-Geçit hiçbir yerde veritabanı numarası kullanmaz: ödeme hesabı, işlem, sipariş, abonelik, link ve kayıtlı kart her zaman token'ıyla anılır.
+Geçit hiçbir yerde veritabanı numarası kullanmaz: ödeme hesabı, işlem, sipariş, abonelik, link, link ödemesi ve kayıtlı kart her zaman token'ıyla anılır.
 
 İstek bir dakika içinde yanıt almazsa kesilir; süreyi `timeout` (milisaniye) ile değiştirebilirsiniz. İstekler Node'un kendi `fetch`'iyle gider; kendi `fetch`'inizi `fetch` seçeneğiyle verebilirsiniz.
 
@@ -96,7 +96,7 @@ if (payment.result.successful) {
 
 Reddedilen ödeme de bir sonuçtur: `result.successful` false, `result.message` neden. Yalnızca geçit isteğin kendisini reddederse (hatalı alan, yetki, hız sınırı, bulunamayan kayıt) hata fırlatılır.
 
-Ödeme yanıtı (`Response.Payment`) ödemeyi bütünüyle taşır: `transaction` altında `token`, `reference`, `status`, `paymentStatus`, `securityType`, `amount`, `baseAmount`, `currency`, `installmentNumber`, `isTest`, `createdAt`, ödeme bir siparişte, linkte ya da abonelikte alındıysa `orderToken` / `paymentLinkToken` / `subscriptionToken`; yanında ödemenin dondurduğu `customer` (`reference`, `billingAddress`), `conversion` ve kart saklandıysa `savedCard`.
+Ödeme yanıtı (`Response.Payment`) ödemeyi bütünüyle taşır: `transaction` altında `token`, `reference`, `status`, `paymentStatus`, `securityType`, `amount`, `baseAmount`, `currency`, `installmentNumber`, `isTest`, `createdAt`, ödeme bir siparişte, linkte ya da abonelikte alındıysa `orderToken` / `paymentLinkToken` / `subscriptionToken` (linkte alınan ödemede `paymentLinkToken` ile birlikte link ödemesinin `linkPaymentToken`'ı da dolu gelir); yanında ödemenin dondurduğu `customer` (`reference`, `billingAddress`), `conversion` ve kart saklandıysa `savedCard`.
 
 Kayıtlı kartla ödemede `card` yerine `savedCardToken` verilir; ödeme kartın saklandığı hesaptan geçer, `paymentProviderToken` gönderilmez. Kart hangi müşteri referansıyla saklandıysa ödeme de aynı referansı taşımalıdır.
 
@@ -165,9 +165,11 @@ created.order.amount;                         // geçidin hesapladığı toplam
 
 `saveAsProduct: true` olan kalem referansıyla ürün listenize yazılır (referans zorunlu). Gönderim yöntemleri istekte gönderilmez: panelinizdeki **Gönderim Yöntemleri** listesinden ödeyenin adresine uyanlar sunulur.
 
-Aynı referansla açık bir sipariş varsa yenisi açılmaz; açık olan gönderdiklerinizle güncellenir ve kendi token'ıyla döner. Ödenmiş referansla yeniden açmaya çalışırsanız istek reddedilir.
+Referans tekil değildir: `createOrder()` her çağrıda yeni bir sipariş ve yeni bir token açar, aynı referans daha önce gönderilmiş olsa da. Var olan sipariş yeniden yazılmaz, tekrarlanan referans reddedilmez. Her yanıttaki `order.token`'ı saklayın; siparişi bundan sonra o adlandırır (`retrieveOrders({ token })`, `updateOrder({ token })`). Referansla sorgu o referanstaki bütün siparişleri getirir.
 
-Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
+Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `discount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
+
+**Kupon.** API'de kupon alanı yoktur; ödeyen kodu ödeme sayfasında girer. Kupon kullanılan siparişte `discount` (`code`, `amount`) dolu gelir, kullanılmayanda `null`. Siparişin `subtotal`, `taxAmount` ve `amount` değerleri indirim düşülmüş hâlidir; kupon gönderim ücretinden düşülmez.
 
 Ödendiğinde müşteri `successUrl` adresinize 3D dönüşüyle aynı alanlarla POST edilir; `retrieveOrders()` kesin sonucu verir.
 
@@ -195,8 +197,10 @@ const created = await client.createPaymentLink({
     currency: 'TRY',
     reference: 'LNK-1',                       // boş: geçit LINK{n} üretir
     expiresAt: '2026-12-31',                  // çalışma alanının saat dilimine göre gün
+    emailsPayer: true,                        // ödeme tamamlanınca ödeyene e-posta gider; varsayılan false
 });
 
+created.paymentLink.token;                    // linki bundan sonra bu adlandırır; saklayın
 created.paymentLink.checkoutUrl;              // linkin kendisi; ödenemezken (kapalı, süresi geçmiş) null
 created.paymentLink.expiresAt;                // verilen günün sonu, ISO 8601 UTC
 created.paymentLink.isTest;                   // ödemeleri şu an test ortamında mı alınıyor
@@ -209,7 +213,58 @@ detail.successful();                          // listelenenlerden başarılı ol
 await client.updatePaymentLink({ token: created.paymentLink.token, isActive: false });
 ```
 
-Panelden açtığınız linkler de aynı uçlarla bulunur. Linkle ödeyen kişi müşteri listenize yazılmaz ve kartı saklanmaz. Süresi geçmiş linki yeniden açmak için `isActive: true` ile birlikte yeni bir `expiresAt` gönderin.
+`createPaymentLink()` her çağrıda yeni bir link ve yeni bir token açar, aynı referans daha önce gönderilmiş olsa da; var olan link yeniden yazılmaz. Linki değiştirmek için yanıttaki token'la `updatePaymentLink()` çağırın.
+
+**Tutar tipi.** `amountType` ödeyenin ne ödediğini belirler (`AmountType`):
+
+| Değer | Ödeyen ne öder |
+| --- | --- |
+| `fixed` (varsayılan) | Sizin yazdığınız kalemleri (`items` zorunlu) |
+| `custom` | Kendi yazdığı tutarı |
+| `predefined` | `predefinedAmounts` içinden seçtiği tutarı |
+| `predefined_and_custom` | Hazır tutarlardan birini ya da kendi yazdığını |
+
+Seçimli tiplerde `items` gönderilmez (gönderilirse yok sayılır); ödeme `itemName` adlı tek kalem olarak alınır ve `itemName` zorunludur. `predefinedAmounts` en çok 10 tutardır ve hazır tutarlı tiplerde zorunludur. `taxRate` ödeyenin seçtiği tutarın KDV oranıdır; `taxMode` (`TaxMode`) oranın tutarın içinde mi (`inclusive`, varsayılan: 100 ödenir, 83,33 + 16,67 KDV) üstüne mi (`exclusive`: 100 yazılır, 120 çekilir) olduğunu söyler.
+
+**Para birimi seçimi.** `currencyType: 'selectable'` (`CurrencyType`) ile ödeyen para birimini sayfada seçer; seçebileceği diğer para birimlerini `currencies` ile verirsiniz (zorunlu). `currency` her zaman listeye girer ve sayfanın ilk para birimidir. Varsayılan `fixed`'de link yalnız `currency` ile ödenir.
+
+```ts
+const donation = await client.createPaymentLink({
+    amountType: 'predefined_and_custom',
+    itemName: 'Bağış',
+    predefinedAmounts: ['50.00', '100.00', '250.00'],
+    taxRate: '0',
+    currency: 'TRY',
+    currencyType: 'selectable',
+    currencies: ['USD', 'EUR'],
+});
+
+donation.paymentLink.amount;                  // seçimli tipte null; subtotal ve taxAmount da null
+donation.paymentLink.currencies;              // ['TRY', 'USD', 'EUR']
+```
+
+Güncellemede `null` gönderilen alan boşaltılır; `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` de böyle boşaltılabilir. Tipin kullanmadığı alanları geçit kaydederken bırakır. Seçimli tipten `fixed`'e dönen (ya da `fixed`'de kalıp kalemi olmayan) link kalemlerini göndermek zorundadır.
+
+Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsPayer`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
+
+**Link ödemeleri.** Linkte yapılan her ödeme bir link ödemesidir (`LinkPayment`): ödeyen ödemeye başlayınca `LINKPAY{n}` referansıyla açılır, ödeme geçince `paid` olur. Link ödemesini ödeyen açar, siz yalnız sorarsınız:
+
+```ts
+const [linkPayment] = (await client.retrieveLinkPayments({ reference: 'LINKPAY1' })).linkPayments;
+
+linkPayment.status;                           // open | paid
+linkPayment.isPaid();
+linkPayment.paymentLink;                      // { token, reference }
+linkPayment.items;                            // ödendiği andaki kalemler
+linkPayment.amount;                           // ödenen tutar, kupon düşülmüş
+linkPayment.discount;                         // { code, amount } ya da null
+linkPayment.customer?.billingAddress;         // ödeyenin sayfada yazdığı fatura adresi
+linkPayment.transaction?.token;               // ödeyen işlem; iade / iptal / retrievePayments için
+```
+
+Link ödemesi (`Response.LinkPayment`): `token`, `reference`, `paymentLink` (`token`, `reference`), `paymentProviderToken`, `status`, `items[]`, `subtotal`, `taxAmount`, `amount`, `discount`, `currency`, `customer` (`billingAddress`; ödeyen yazmadıysa `null`), `isTest`, `createdAt`, `transaction` (`token`, `reference`, `paymentStatus`; açıkken `null`).
+
+Panelden açtığınız linkler de aynı uçlarla bulunur. Linkle ödeyen kişi müşteri listenize yazılmaz ve kartı saklanmaz. Süresi geçmiş link yeni bir `expiresAt` verilince yeniden ödeme alır; yeni tarih olmadan `isActive: true` reddedilir.
 
 ## Abonelik
 
@@ -237,6 +292,10 @@ subscription.customer?.reference;
 // Dönem, kalemler, ödeme sayısı değişir; iptal de buradan:
 await client.updateSubscription({ token, status: 'cancelled' });
 ```
+
+`createSubscription()` de her çağrıda yeni bir abonelik ve yeni bir token açar, aynı referans daha önce gönderilmiş olsa da; var olan abonelik yeniden yazılmaz. Yanıttaki `subscription.token`'ı saklayın.
+
+Ödeyen ilk ödemede ödeme sayfasında kupon kullandıysa `subscription.discount` (`code`, `amount`) dolu gelir, kullanmadıysa `null`; kupon yalnız ilk ödemede geçerlidir. Aboneliğin kendi `subtotal`, `taxAmount` ve `amount` değerleri indirimsizdir; ilk ödemede çekilen indirimli tutar `renewal.amount`'tadır.
 
 İptalde para iade edilmez; ödenmiş dönem sonuna kadar sürer, sonra abonelik biter. Ödenmiş dönem yoksa hemen `cancelled` olur.
 
@@ -335,6 +394,7 @@ for (const transaction of list.payments) {
     transaction.paymentStatus;                // unpaid, paid, cancelled, refunded, partially_refunded
     transaction.errorMessage;
     transaction.orderToken ?? transaction.paymentLinkToken ?? transaction.subscriptionToken;
+    transaction.linkPaymentToken;             // linkte alınan denemede link ödemesi
 }
 
 list.successful();                            // geçen denemeler
@@ -343,8 +403,11 @@ await client.retrieveOrders({ reference: 'SIP-10233' });
 await client.retrieveOrders();                                 // son 7 gün
 await client.retrieveSubscriptions({ reference: 'ABO-1' });
 await client.retrievePaymentLinks({ createdFrom: '2026-09-26', createdTo: '2026-10-02' });
+await client.retrieveLinkPayments({ reference: 'LINKPAY1' });   // link ödemesinin referansı geçidin verdiği LINKPAY{n}
 await client.retrieveSavedCards({ customerReference: 'musteri-88' });
 ```
+
+Referans tekil olmadığından `reference` ile sorgu birden çok kayıt dönebilir; tek bir kaydı `token` ile sorun. Linkte alınan bir denemenin `reference`'ı link ödemesinin `LINKPAY{n}` referansıdır; linkin kendi referansıyla `retrievePayments` denemeleri getirmez, linkin denemeleri `retrievePaymentLinks` yanıtındaki `transactions`'ta ya da `retrieveLinkPayments` ile bulunur.
 
 ## Webhook
 
@@ -359,7 +422,7 @@ Sipariş ödendiğinde, link ödemesi alındığında, abonelik durum değiştir
 
 Sipariş, link ya da abonelikte alınan ödeme için `transaction.*` gelmez; o kaynağın kendi olayı gelir.
 
-**Webhook nihai sonuç değildir.** Gövde yalnızca kaynağın token'ını (para hareketi varsa yanında ödemenin token'ını) taşır. Kararı, token ile geçide sorduğunuz yanıta göre verin ve yanıtı kendi kaydınızla (referans, tutar, durum) karşılaştırın. Gövdeyi **ham** okuyun; `express.json()` gibi gövdeyi ayrıştırıp yeniden yazan bir ara katman imzayı bozar.
+**Webhook nihai sonuç değildir.** Gövde yalnızca kaynağın token'ını (para hareketi varsa yanında ödemenin token'ını, `payment_link.*` olaylarında link ödemesinin token'ını) taşır; `discount` gibi ayrıntılar gövdede yoktur. Kararı, token ile geçide sorduğunuz yanıta göre verin ve yanıtı kendi kaydınızla (referans, tutar, durum) karşılaştırın. Gövdeyi **ham** okuyun; `express.json()` gibi gövdeyi ayrıştırıp yeniden yazan bir ara katman imzayı bozar.
 
 ```ts
 import express from 'express';
@@ -385,22 +448,26 @@ app.post('/odemehub/webhook', express.raw({ type: 'application/json' }), async (
         const [order] = (await client.retrieveOrders({ token: webhook.orderToken })).orders;
         order.status;                        // 'paid'
         order.transaction?.paymentStatus;    // 'refunded', 'partially_refunded' ...
+    } else if (webhook.linkPaymentToken !== null) {   // payment_link.*; paymentLinkToken da dolu
+        const [linkPayment] = (await client.retrieveLinkPayments({ token: webhook.linkPaymentToken })).linkPayments;
+        linkPayment.status;                  // 'paid'
+        linkPayment.paymentLink.token;       // webhook.paymentLinkToken ile aynı
+        linkPayment.transaction?.paymentStatus;
     } else if (webhook.subscriptionToken !== null) {
         const [subscription] = (await client.retrieveSubscriptions({ token: webhook.subscriptionToken })).subscriptions;
-    } else if (webhook.transactionToken !== null) {   // transaction.* ve payment_link.*
+    } else if (webhook.transactionToken !== null) {   // transaction.*
         const [transaction] = (await client.retrievePayments({ token: webhook.transactionToken })).payments;
-        transaction.paymentLinkToken;        // linkte alınan ödemede linkin token'ı
     }
 
     res.sendStatus(204);
 });
 ```
 
-Abonelik ve link ödemelerinin iade/iptal olaylarında `transactionToken` da gelir; `retrievePayments()` yanıtındaki `orderToken` / `paymentLinkToken` / `subscriptionToken` ödemenin gerçekten o kaynağa ait olduğunu gösterir. Yalnızca doğrulamak için `client.verifyWebhook(...)` `boolean` döner. Geçit 2xx yanıt alana kadar 60 sn, 5 dk, 15 dk ve 30 dk arayla toplam 5 kez dener; yönlendirmeleri izlemez.
+Sipariş, link ve abonelikte para hareket eden olaylarda `transactionToken` da gelir; `payment_link.*` olaylarında ayrıca `linkPaymentToken`. `retrievePayments()` yanıtındaki `orderToken` / `paymentLinkToken` / `linkPaymentToken` / `subscriptionToken` ödemenin gerçekten o kaynağa ait olduğunu gösterir. Yalnızca doğrulamak için `client.verifyWebhook(...)` `boolean` döner. Geçit 2xx yanıt alana kadar 60 sn, 5 dk, 15 dk ve 30 dk arayla toplam 5 kez dener; yönlendirmeleri izlemez.
 
 ## Sabit değerler
 
-Sabit değer kümeleri string-literal union tipleridir ve paketten dışa açılır: `Currency`, `Period`, `OrderStatus`, `SubscriptionStatus`, `TransactionStatus`, `PaymentStatus`, `SecurityType`, `RefundType`, `RefundStatus`, `CardScheme`, `CardType`, `WebhookEvent`.
+Sabit değer kümeleri string-literal union tipleridir ve paketten dışa açılır: `Currency`, `Period`, `OrderStatus`, `SubscriptionStatus`, `LinkPaymentStatus`, `AmountType`, `CurrencyType`, `TaxMode`, `TransactionStatus`, `PaymentStatus`, `SecurityType`, `RefundType`, `RefundStatus`, `CardScheme`, `CardType`, `WebhookEvent`.
 
 ```ts
 import type { SubscriptionStatus } from '@odemehub/node-sdk';
@@ -446,6 +513,21 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 ## İstek sınırları
 
 Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.2'deki değişiklikler
+
+1.0.2, SDK'yı geçidin bugünkü API'sine eşitler. Eklenenler:
+
+- **Link ödemeleri:** yeni `retrieveLinkPayments()` metodu (`token`, `LINKPAY{n}` referansı ya da `createdFrom` / `createdTo`), yeni `Response.LinkPayment` ve `Response.LinkPaymentList` modelleri, yeni `LinkPaymentStatus` (`open` | `paid`). `PaymentTransaction`, `Transaction` ve `Webhook` yeni `linkPaymentToken` alanını taşır.
+- **Ödeme linkinin yeni alanları:** `createPaymentLink()` ve `updatePaymentLink()` `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `currencyType`, `currencies` ve `emailsPayer` alır; `Response.PaymentLink` aynı alanları döner. Yeni sabitler: `AmountType`, `CurrencyType`, `TaxMode`. Güncellemede `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` `null` ile boşaltılabilir.
+- **Kupon:** `Order`, `Subscription` ve `LinkPayment` yanıtları `discount` (`Response.Discount`: `code`, `amount`; kupon yoksa `null`) taşır. Webhook gövdesinde `discount` yoktur.
+
+Küçük kırıcı değişiklikler:
+
+- **`create*` artık idempotent değil:** `createOrder()`, `createSubscription()` ve `createPaymentLink()` her çağrıda yeni kayıt ve yeni token açar, aynı `reference` daha önce gönderilmiş olsa da. Açık kayıt yeniden yazılmaz; tekrarlanan referans için `ValidationError` dönmez. Referans tekil değildir; her yanıttaki token'ı saklayıp kaydı onunla adlandırın. Yanıtı alınamayan bir çağrıyı tekrarlamak ikinci bir kayıt açar.
+- **`CreatePaymentLink.items` isteğe bağlı:** yalnız `fixed` tipte gerekir; seçimli tiplerde gönderilmez.
+- **`PaymentLink.subtotal`, `taxAmount` ve `amount` artık `string | null`:** seçimli tipte geçit `null` döner ve SDK onu `null` olarak verir (eskiden `''` okunuyordu).
+- **Linkte alınan deneme:** işlemin `reference`'ı link ödemesinin `LINKPAY{n}` referansıdır; linkin kendi referansıyla `retrievePayments()` linkin denemelerini getirmez.
 
 ## 1.0.1'deki kırıcı değişiklikler
 

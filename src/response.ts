@@ -5,16 +5,20 @@
  */
 
 import type {
+    AmountType,
     CardScheme,
     CardType,
     Currency,
+    CurrencyType,
     Known,
+    LinkPaymentStatus,
     OrderStatus,
     PaymentStatus,
     Period,
     RefundType,
     SecurityType,
     SubscriptionStatus,
+    TaxMode,
     TransactionStatus,
     WebhookEvent,
 } from './enums.js';
@@ -43,6 +47,13 @@ function list(value: unknown): unknown[] {
     }
 
     return value !== null && typeof value === 'object' ? Object.values(value) : [];
+}
+
+/**
+ * A list the answer may carry or leave as null, each entry read as a string.
+ */
+function optionalStrings(value: unknown): string[] | null {
+    return value === undefined || value === null ? null : list(value).map(string);
 }
 
 function string(value: unknown): string {
@@ -341,6 +352,8 @@ export class PaymentTransaction {
     declare readonly orderToken: string | null;
     /** The payment link the payment was made on, when it was made on one. */
     declare readonly paymentLinkToken: string | null;
+    /** The payer's payment at the link, when it was made on one; ask after it with `retrieveLinkPayments`. */
+    declare readonly linkPaymentToken: string | null;
     /** The subscription whose renewal the payment paid, when it paid one. */
     declare readonly subscriptionToken: string | null;
 
@@ -373,6 +386,7 @@ export class PaymentTransaction {
             createdAt: said(transaction.created_at),
             orderToken: said(optionalObject(transaction.order)?.token),
             paymentLinkToken: said(optionalObject(transaction.payment_link)?.token),
+            linkPaymentToken: said(optionalObject(transaction.link_payment)?.token),
             subscriptionToken: said(optionalObject(transaction.subscription)?.token),
         });
     }
@@ -512,8 +526,9 @@ export class GiveBack extends Payment {
  * under Webhook in the panel, as plain JSON signed the way every answer is.
  *
  * It is a notification, never the answer. It names the thing by token —
- * and the payment beside it when money moved — and nothing else; ask the
- * gateway what became of it (`retrieveOrders`, `retrievePaymentLinks`,
+ * and the payment beside it when money moved, and the payer's payment at
+ * the link for a link — and nothing else; ask the gateway what became of it
+ * (`retrieveOrders`, `retrievePaymentLinks`, `retrieveLinkPayments`,
  * `retrieveSubscriptions`, `retrievePayments`, by its token) and act on
  * that. A word may arrive more than once; the id tells the copies apart.
  */
@@ -526,6 +541,8 @@ export class Webhook {
     declare readonly orderToken: string | null;
     /** The payment link, for the `payment_link.*` events. */
     declare readonly paymentLinkToken: string | null;
+    /** The payer's payment at the link, for the `payment_link.*` events. */
+    declare readonly linkPaymentToken: string | null;
     /** The subscription, for the `subscription.*` events. */
     declare readonly subscriptionToken: string | null;
     /** The payment: for the `transaction.*` events, and beside the thing wherever money moved at it. */
@@ -542,6 +559,7 @@ export class Webhook {
             createdAt: said(body.created_at),
             orderToken: said(optionalObject(body.order)?.token),
             paymentLinkToken: said(optionalObject(body.payment_link)?.token),
+            linkPaymentToken: said(optionalObject(body.link_payment)?.token),
             subscriptionToken: said(optionalObject(body.subscription)?.token),
             transactionToken: said(optionalObject(body.transaction)?.token),
         });
@@ -584,6 +602,8 @@ export class Transaction {
     declare readonly orderToken: string | null;
     /** The token of the payment link this attempt was at, when it was at one. */
     declare readonly paymentLinkToken: string | null;
+    /** The token of the payer's payment at the link this attempt was at, when it was at one. */
+    declare readonly linkPaymentToken: string | null;
     /** The token of the subscription this attempt paid a renewal of, when it did. */
     declare readonly subscriptionToken: string | null;
     /** The card the payment kept, when it asked to keep one and went through; null otherwise. */
@@ -627,6 +647,7 @@ export class Transaction {
             conversion: conversion === null ? null : Conversion.fromBody(conversion),
             orderToken: said(object(transaction.order).token),
             paymentLinkToken: said(object(transaction.payment_link).token),
+            linkPaymentToken: said(object(transaction.link_payment).token),
             subscriptionToken: said(object(transaction.subscription).token),
             savedCard: savedCard === null ? null : SavedCard.fromBody(savedCard),
         });
@@ -728,6 +749,29 @@ export class ShippingMethod {
 }
 
 /**
+ * The coupon the payer put on an order, a subscription or a payment at a
+ * link on the checkout page: the code they typed and what it took off the
+ * lines. A coupon is never sent through the API; it only comes back.
+ */
+export class Discount {
+    /** The code the payer typed. */
+    declare readonly code: string;
+    /** What it took off the lines, with the kurus behind a point, in the thing's own money. */
+    declare readonly amount: string;
+
+    constructor(fields: Fields<Discount>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(discount: Body): Discount {
+        return new Discount({
+            code: string(discount.code),
+            amount: string(discount.amount),
+        });
+    }
+}
+
+/**
  * An order as the gateway keeps it: what is being paid for, what it comes
  * to, where it stands, whose it is and — once it is paid — the payment that
  * paid it. The same shape comes back whether the order has just been
@@ -747,14 +791,16 @@ export class Order {
     declare readonly items: Item[];
     /** The way the payer picked; null until they have, or when none was offered. */
     declare readonly shippingMethod: ShippingMethod | null;
-    /** What the lines come to before tax. */
+    /** What the lines come to before tax, the coupon taken off. */
     declare readonly subtotal: string;
     /** What the way picked costs before tax. */
     declare readonly shippingAmount: string;
     /** The tax of the lines and the way picked together. */
     declare readonly taxAmount: string;
-    /** What the order comes to: the lines and the way picked, added up by the gateway. */
+    /** What the order comes to: the lines, the coupon taken off, and the way picked, added up by the gateway. */
     declare readonly amount: string;
+    /** The coupon the payer put on the order; null when none was. The amounts above already have it taken off. */
+    declare readonly discount: Discount | null;
     declare readonly currency: Known<Currency>;
     /** Whether it was paid in the test environment; null until it is paid. */
     declare readonly isTest: boolean | null;
@@ -792,6 +838,7 @@ export class Order {
 
     private static read(order: Body, customer: unknown): Order {
         const shippingMethod = optionalObject(order.shipping_method);
+        const discount = optionalObject(order.discount);
         const transaction = optionalObject(order.transaction);
         const namedCustomer = optionalObject(customer);
 
@@ -807,6 +854,7 @@ export class Order {
             shippingAmount: string(order.shipping_amount),
             taxAmount: string(order.tax_amount),
             amount: string(order.amount),
+            discount: discount === null ? null : Discount.fromBody(discount),
             currency: string(order.currency),
             isTest: optionalBoolean(order.is_test),
             createdAt: said(order.created_at),
@@ -872,8 +920,10 @@ export class OrderList {
 }
 
 /**
- * A payment link as it stands: what it sells, what it comes to now,
- * whether it takes payments and until when, and the address it is paid at.
+ * A payment link as it stands: what it sells — its lines and what they
+ * come to now, or what the payer may pick and the tax on it — in which
+ * money, whether it takes payments and until when, and the address it is
+ * paid at.
  */
 export class PaymentLink {
     /** The link's token in the gateway; name it to ask after it or change it. */
@@ -883,13 +933,31 @@ export class PaymentLink {
     declare readonly description: string | null;
     /** The account the link is paid through; null where the team's Gate rules and default account decide. */
     declare readonly paymentProviderToken: string | null;
+    /** What the payer pays: the lines (`fixed`), or an amount they pick. */
+    declare readonly amountType: Known<AmountType>;
+    /** The name of the one line a payment is made up of where the payer picks the amount; null on a `fixed` link. */
+    declare readonly itemName: string | null;
+    /** The amounts the payer picks from; null where none are offered. */
+    declare readonly predefinedAmounts: string[] | null;
+    /** The tax on the amount the payer picks, as a percentage; null when it carries none. */
+    declare readonly taxRate: string | null;
+    /** Whether `taxRate` is inside the amount the payer picks or added on top of it. */
+    declare readonly taxMode: Known<TaxMode>;
+    /** The lines, on a `fixed` link; empty on the others. */
     declare readonly items: Item[];
-    /** What the lines come to before tax. */
-    declare readonly subtotal: string;
-    declare readonly taxAmount: string;
-    /** What one payment on the link comes to. */
-    declare readonly amount: string;
+    /** What the lines come to before tax; null where the payer picks the amount. */
+    declare readonly subtotal: string | null;
+    /** The tax inside the lines; null where the payer picks the amount. */
+    declare readonly taxAmount: string | null;
+    /** What one payment on the link comes to; null where the payer picks the amount. */
+    declare readonly amount: string | null;
     declare readonly currency: Known<Currency>;
+    /** Whether the payer may pick the money. */
+    declare readonly currencyType: Known<CurrencyType>;
+    /** The money the payer picks from, `currency` included, on a `selectable` link; null on a `fixed` one. */
+    declare readonly currencies: Known<Currency>[] | null;
+    /** Whether the payer is sent an e-mail once their payment goes through. */
+    declare readonly emailsPayer: boolean;
     /** Whether it takes payments now: switched on, and its last day not gone by. */
     declare readonly isActive: boolean;
     /** Whether its payments are taken in the test environment now. */
@@ -919,11 +987,19 @@ export class PaymentLink {
             reference: string(link.reference),
             description: said(link.description),
             paymentProviderToken: said(link.payment_provider_token),
+            amountType: string(link.amount_type),
+            itemName: said(link.item_name),
+            predefinedAmounts: optionalStrings(link.predefined_amounts),
+            taxRate: optionalString(link.tax_rate),
+            taxMode: string(link.tax_mode),
             items: list(link.items).map((item) => Item.fromBody(object(item))),
-            subtotal: string(link.subtotal),
-            taxAmount: string(link.tax_amount),
-            amount: string(link.amount),
+            subtotal: optionalString(link.subtotal),
+            taxAmount: optionalString(link.tax_amount),
+            amount: optionalString(link.amount),
             currency: string(link.currency),
+            currencyType: string(link.currency_type),
+            currencies: optionalStrings(link.currencies),
+            emailsPayer: boolean(link.emails_payer),
             isActive: boolean(link.is_active),
             isTest: boolean(link.is_test),
             expiresAt: said(link.expires_at),
@@ -981,6 +1057,150 @@ export class PaymentLinkList {
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
             paymentLinks: list(body.payment_links).map((entry) => PaymentLink.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * Which payment link a payment was made at: its token and the merchant's
+ * own reference for it.
+ */
+export class PaymentLinkReference {
+    /** The link's token in the gateway, which names it to ask after it or change it. */
+    declare readonly token: string;
+    /** The reference the link is known by in the calling system. */
+    declare readonly reference: string;
+
+    constructor(fields: Fields<PaymentLinkReference>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(paymentLink: Body): PaymentLinkReference {
+        return new PaymentLinkReference({
+            token: string(paymentLink.token),
+            reference: string(paymentLink.reference),
+        });
+    }
+}
+
+/**
+ * Who paid at a link, as they billed themselves on the page. A payer at a
+ * link is nobody the team keeps, so there is no reference.
+ */
+export class LinkPaymentCustomer {
+    declare readonly billingAddress: Address;
+
+    constructor(fields: Fields<LinkPaymentCustomer>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(customer: Body): LinkPaymentCustomer {
+        return new LinkPaymentCustomer({
+            billingAddress: Address.fromBody(object(customer.billing_address)),
+        });
+    }
+}
+
+/**
+ * A payment made at a payment link: opened as the payer starts paying, and
+ * paid once a payment goes through. What was paid and the tax in it, where
+ * it stands, the link it was made at, the payer as they billed themselves,
+ * and — once it is paid — the payment that paid it, which is what is given
+ * back out of or asked after.
+ */
+export class LinkPayment {
+    /** The payment's token in the gateway; name it to ask after it again. */
+    declare readonly token: string;
+    /** The reference the gateway gave it: LINKPAY1, LINKPAY2… */
+    declare readonly reference: string;
+    /** The link it was made at. */
+    declare readonly paymentLink: PaymentLinkReference;
+    /** The account the link named when the payment was opened; null where the team's Gate rules and default account decide. */
+    declare readonly paymentProviderToken: string | null;
+    /** Where it stands: open until a payment goes through, then paid. */
+    declare readonly status: Known<LinkPaymentStatus>;
+    /** What was paid for, as the link was when the payer paid; a line here carries no picture. */
+    declare readonly items: Item[];
+    /** What the lines come to before tax, the coupon taken off. */
+    declare readonly subtotal: string;
+    /** The tax inside the lines, the coupon taken off. */
+    declare readonly taxAmount: string;
+    /** What the payer pays, the coupon taken off. */
+    declare readonly amount: string;
+    /** The coupon the payer put on it; null when none was. The amounts above already have it taken off. */
+    declare readonly discount: Discount | null;
+    declare readonly currency: Known<Currency>;
+    /** Who paid, as they billed themselves; null while they have not said. */
+    declare readonly customer: LinkPaymentCustomer | null;
+    /** Whether it was made in the test environment. */
+    declare readonly isTest: boolean;
+    declare readonly createdAt: string | null;
+    /** The payment that paid it, which names it again for a refund; null while it is open. */
+    declare readonly transaction: TransactionReference | null;
+
+    constructor(fields: Fields<LinkPayment>) {
+        Object.assign(this, fields);
+    }
+
+    /** Whether a payment has gone through. */
+    isPaid(): boolean {
+        return this.status === 'paid';
+    }
+
+    static fromBody(linkPayment: Body): LinkPayment {
+        const discount = optionalObject(linkPayment.discount);
+        const customer = optionalObject(linkPayment.customer);
+        const transaction = optionalObject(linkPayment.transaction);
+
+        return new LinkPayment({
+            token: string(linkPayment.token),
+            reference: string(linkPayment.reference),
+            paymentLink: PaymentLinkReference.fromBody(object(linkPayment.payment_link)),
+            paymentProviderToken: said(linkPayment.payment_provider_token),
+            status: string(linkPayment.status),
+            items: list(linkPayment.items).map((item) => Item.fromBody(object(item))),
+            subtotal: string(linkPayment.subtotal),
+            taxAmount: string(linkPayment.tax_amount),
+            amount: string(linkPayment.amount),
+            discount: discount === null ? null : Discount.fromBody(discount),
+            currency: string(linkPayment.currency),
+            customer: customer === null ? null : LinkPaymentCustomer.fromBody(customer),
+            isTest: boolean(linkPayment.is_test),
+            createdAt: said(linkPayment.created_at),
+            transaction: transaction === null ? null : TransactionReference.fromBody(transaction),
+        });
+    }
+}
+
+/**
+ * Payments at the team's links asked after. The answer is always a list,
+ * oldest first, and an empty one when nothing matched. The days are the
+ * ones the gateway used, when the records were asked for by the days they
+ * were made on: the ones asked for, or the last seven when none were.
+ */
+export class LinkPaymentList {
+    declare readonly result: Result;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time; null when they were asked for by token or reference. */
+    declare readonly createdFrom: string | null;
+    /** The last day listed, the same way. */
+    declare readonly createdTo: string | null;
+    declare readonly linkPayments: LinkPayment[];
+
+    constructor(fields: Fields<LinkPaymentList>) {
+        Object.assign(this, fields);
+    }
+
+    /** The payments that have gone through. */
+    paid(): LinkPayment[] {
+        return this.linkPayments.filter((linkPayment) => linkPayment.isPaid());
+    }
+
+    static fromBody(body: Body): LinkPaymentList {
+        return new LinkPaymentList({
+            result: Result.fromBody(body),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            linkPayments: list(body.link_payments).map((entry) => LinkPayment.fromBody(object(entry))),
         });
     }
 }
@@ -1049,8 +1269,14 @@ export class Subscription {
     declare readonly subtotal: string;
     declare readonly shippingAmount: string;
     declare readonly taxAmount: string;
-    /** What a renewal comes to: the lines and the way picked. */
+    /** What a renewal comes to: the lines and the way picked, with no coupon taken off. */
     declare readonly amount: string;
+    /**
+     * The coupon the payer put on the first payment, the only one that
+     * takes a coupon; null when none was. The amounts above are without it;
+     * what the first payment was charged is on `renewal.amount`.
+     */
+    declare readonly discount: Discount | null;
     declare readonly currency: Known<Currency>;
     /** Whether it was paid for in the test environment; null until the first payment. */
     declare readonly isTest: boolean | null;
@@ -1126,6 +1352,7 @@ export class Subscription {
 
     private static read(subscription: Body, customer: unknown): Subscription {
         const shippingMethod = optionalObject(subscription.shipping_method);
+        const discount = optionalObject(subscription.discount);
         const namedCustomer = optionalObject(customer);
 
         return new Subscription({
@@ -1143,6 +1370,7 @@ export class Subscription {
             shippingAmount: string(subscription.shipping_amount),
             taxAmount: string(subscription.tax_amount),
             amount: string(subscription.amount),
+            discount: discount === null ? null : Discount.fromBody(discount),
             currency: string(subscription.currency),
             isTest: optionalBoolean(subscription.is_test),
             renewal: Renewal.fromBody(object(subscription.renewal)),

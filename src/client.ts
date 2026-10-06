@@ -107,8 +107,9 @@ export class Client {
     }
 
     /**
-     * Open an order to be paid on the gateway's own page, or overwrite the
-     * open one already under the same reference.
+     * Open an order to be paid on the gateway's own page. Every call opens
+     * a new order under a new token, even under a reference already sent;
+     * keep the token the answer carries.
      */
     async createOrder(order: Request.CreateOrder): Promise<Response.OrderDetails> {
         return Response.OrderDetails.fromBody(await this.send(body.createOrder(order)));
@@ -129,8 +130,9 @@ export class Client {
     }
 
     /**
-     * Open a payment link, or overwrite the one already under the same
-     * reference. The address that comes back is the link itself.
+     * Open a payment link. Every call opens a new link under a new token,
+     * even under a reference already sent; keep the token the answer
+     * carries. The address that comes back is the link itself.
      */
     async createPaymentLink(paymentLink: Request.CreatePaymentLink): Promise<Response.PaymentLinkDetails> {
         return Response.PaymentLinkDetails.fromBody(await this.send(body.createPaymentLink(paymentLink)));
@@ -145,17 +147,28 @@ export class Client {
     }
 
     /**
-     * Change a payment link: its lines, its last day, whether it takes
-     * payments. Only what is sent is written.
+     * Change a payment link: its lines or what the payer may pay, its
+     * money, its last day, whether it takes payments. Only what is sent is
+     * written.
      */
     async updatePaymentLink(paymentLink: Request.UpdatePaymentLink): Promise<Response.PaymentLinkDetails> {
         return Response.PaymentLinkDetails.fromBody(await this.send(body.updatePaymentLink(paymentLink)));
     }
 
     /**
+     * Payments made at the team's links, each with what was paid, the link
+     * it was paid at, who paid as they billed themselves and — once it is
+     * paid — the payment that paid it.
+     */
+    async retrieveLinkPayments(linkPayments: Request.RetrieveLinkPayments = {}): Promise<Response.LinkPaymentList> {
+        return Response.LinkPaymentList.fromBody(await this.send(body.retrieveLinkPayments(linkPayments)));
+    }
+
+    /**
      * Open a subscription, its first renewal to be paid on the gateway's own
-     * page and the rest taken from the card kept then; or overwrite the one
-     * already under the same reference while nothing has been paid on it.
+     * page and the rest taken from the card kept then. Every call opens a
+     * new subscription under a new token, even under a reference already
+     * sent; keep the token the answer carries.
      */
     async createSubscription(subscription: Request.CreateSubscription): Promise<Response.SubscriptionDetails> {
         return Response.SubscriptionDetails.fromBody(await this.send(body.createSubscription(subscription)));

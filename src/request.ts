@@ -8,9 +8,9 @@
  * answers a refusal with `ValidationError`, field by field.
  */
 
-import type { Currency, Period, SubscriptionStatus } from './enums.js';
+import type { AmountType, Currency, CurrencyType, Period, SubscriptionStatus, TaxMode } from './enums.js';
 
-export type { Currency, Period } from './enums.js';
+export type { AmountType, Currency, CurrencyType, Period, TaxMode } from './enums.js';
 
 /**
  * The card a payment is attempted with. The number and the security code
@@ -243,12 +243,13 @@ export interface Item {
  * customer to. What it comes to is never sent: it is the lines added up,
  * and the way of sending the payer picks from the team's own list.
  *
- * Opening again under a reference already open writes over the open one
- * and answers with it, under its own token, so a call repeated after a lost
- * answer finds what it opened rather than a twin of it.
+ * Every call opens a new one under a new token, even under a reference
+ * already sent: nothing open is written over, and a repeated reference is
+ * not turned down. Keep the token each answer carries; it is what names
+ * this one from then on, to ask after it or change it.
  */
 export interface CheckoutMessage {
-    /** The reference it is known by in the calling system. Has to carry at least one digit. */
+    /** The reference it is known by in the calling system. Has to carry at least one digit; it need not be unique. */
     reference: string;
     /** Where the customer is posted back to once it is paid. */
     successUrl: string;
@@ -350,19 +351,43 @@ export interface UpdateSubscription extends UpdateCheckoutMessage {
  * anybody who has the address, until it is switched off or its day runs
  * out. There is no customer; whoever pays says who they are on the page.
  *
- * Opening again under a reference that already has a link writes over that
- * link and answers with it, under its own token. A link opened without a
+ * A link is paid as the lines the merchant wrote (`amountType` `fixed`, the
+ * default), or lets the payer pick the amount — any they write, one of
+ * `predefinedAmounts`, or either — paid as one line named `itemName`, with
+ * `taxRate` read as `taxMode` says. It is paid in `currency`, or, with
+ * `currencyType` `selectable`, in any of `currencies` the payer picks.
+ *
+ * Every call opens a new link under a new token, even under a reference
+ * already sent: nothing is written over, and a repeated reference is not
+ * turned down. Keep the token the answer carries. A link opened without a
  * reference is given one of the form `LINK{n}`.
  */
 export interface CreatePaymentLink {
-    /** What the link is for; at least one line. */
-    items: Item[];
+    /** The money the link is priced in, and the one the payer starts with where they may pick another. */
     currency: Currency;
-    /** The reference the link is known by in the calling system. Has to carry at least one digit. */
+    /** What the link is for; at least one line on a `fixed` link, passed over on the others. */
+    items?: Item[];
+    /** The reference the link is known by in the calling system. Has to carry at least one digit; it need not be unique. */
     reference?: string;
     description?: string;
     /** The account the link is paid through; it has to take 3D payments. Left out, Gate rules and the default account decide when it is paid. */
     paymentProviderToken?: string;
+    /** What the payer pays: the lines (`fixed`), or an amount they pick. Left out, `fixed`. */
+    amountType?: AmountType;
+    /** The name of the one line a payment is made up of where the payer picks the amount; needed there. */
+    itemName?: string;
+    /** The amounts the payer picks from, at most ten, as digits with the kurus behind a point: '100.00'. Needed for `predefined` and `predefined_and_custom`. */
+    predefinedAmounts?: string[];
+    /** The tax on the amount the payer picks, as a percentage: '20'. Left out, it carries none. */
+    taxRate?: string;
+    /** Whether `taxRate` is inside the amount the payer picks or added on top of it. Left out, `inclusive`. */
+    taxMode?: TaxMode;
+    /** Whether the payer may pick the money. Left out, `fixed`: the link is paid in `currency`. */
+    currencyType?: CurrencyType;
+    /** The money the payer may pick besides `currency`; needed for `selectable`. */
+    currencies?: Currency[];
+    /** Whether the payer is sent an e-mail once their payment goes through. Left out, they are not. */
+    emailsPayer?: boolean;
     /** The last day the link may be paid, as `YYYY-MM-DD` in the team's own time; today or later. Left out, it never runs out. */
     expiresAt?: string;
     /** Whether the link takes payments. Left out, it does. */
@@ -372,9 +397,10 @@ export interface CreatePaymentLink {
 /**
  * A change to a payment link. Only what is sent is written: a field left
  * out keeps what there was, and lines sent replace every line there was. A
- * field set to `null` is set to nothing. Switching a link off is
- * `isActive: false`; switching one whose day has gone by back on needs a
- * new `expiresAt` with it.
+ * field set to `null` is set to nothing. A link turned back to `fixed`, or
+ * left `fixed` without lines, has to be sent its lines. Switching a link
+ * off is `isActive: false`; one whose day has gone by is switched back on
+ * by giving it a new `expiresAt`.
  */
 export interface UpdatePaymentLink {
     /** The link's token in the gateway. */
@@ -384,6 +410,15 @@ export interface UpdatePaymentLink {
     reference?: string;
     description?: string | null;
     paymentProviderToken?: string | null;
+    amountType?: AmountType;
+    itemName?: string | null;
+    predefinedAmounts?: string[] | null;
+    /** `null` leaves the amount the payer picks without tax. */
+    taxRate?: string | null;
+    taxMode?: TaxMode;
+    currencyType?: CurrencyType;
+    currencies?: Currency[] | null;
+    emailsPayer?: boolean;
     /** As `YYYY-MM-DD` in the team's own time; `null` lets it never run out. */
     expiresAt?: string | null;
     isActive?: boolean;
@@ -471,6 +506,14 @@ export type RetrieveSubscriptions = Retrieve;
  * and the latest fifty of them.
  */
 export type RetrievePaymentLinks = Retrieve;
+
+/**
+ * Payments at the team's links asked after: one by its token, one by the
+ * reference the gateway gave it (`LINKPAY1`, `LINKPAY2`…), or the ones made
+ * between two days. A payment at a link is opened by the payer as they pay,
+ * never by the merchant, so it is only ever asked after.
+ */
+export type RetrieveLinkPayments = Retrieve;
 
 /**
  * Kept cards asked after: one by its token, every card of a customer by the

@@ -222,10 +222,18 @@ export function createPaymentLink(message: Request.CreatePaymentLink): Message {
             reference: message.reference,
             description: message.description,
             payment_provider_token: message.paymentProviderToken,
+            amount_type: message.amountType,
+            item_name: message.itemName,
+            predefined_amounts: message.predefinedAmounts,
+            tax_rate: message.taxRate,
+            tax_mode: message.taxMode,
             currency: message.currency,
+            currency_type: message.currencyType,
+            currencies: message.currencies,
+            emails_payer: message.emailsPayer,
             expires_at: message.expiresAt,
             is_active: message.isActive,
-            items: message.items.map(item),
+            items: message.items?.map(item),
         }),
     });
 }
@@ -241,12 +249,24 @@ export function updatePaymentLink(message: Request.UpdatePaymentLink): Message {
             reference: message.reference,
             description: message.description,
             payment_provider_token: message.paymentProviderToken,
+            amount_type: message.amountType,
+            item_name: message.itemName,
+            predefined_amounts: message.predefinedAmounts,
+            tax_rate: message.taxRate,
+            tax_mode: message.taxMode,
             currency: message.currency,
+            currency_type: message.currencyType,
+            currencies: message.currencies,
+            emails_payer: message.emailsPayer,
             expires_at: message.expiresAt,
             is_active: message.isActive,
             items: message.items?.map(item),
         }),
     });
+}
+
+export function retrieveLinkPayments(message: Request.RetrieveLinkPayments): Message {
+    return retrieve('retrieve-link-payments', message);
 }
 
 export function createSubscription(message: Request.CreateSubscription): Message {

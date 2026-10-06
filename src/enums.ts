@@ -12,7 +12,7 @@
  */
 export type Known<T extends string> = T | (string & {});
 
-/** The money a payment, an order, a subscription or a link is priced in. */
+/** The money a payment, an order, a subscription, a link or a payment at one is priced in. */
 export type Currency = 'TRY' | 'USD' | 'EUR' | 'GBP';
 
 /** How often a subscription renews. */
@@ -23,6 +23,31 @@ export type OrderStatus = 'open' | 'paid';
 
 /** Where a subscription stands. */
 export type SubscriptionStatus = 'pending' | 'active' | 'past_due' | 'cancelled' | 'completed';
+
+/**
+ * Where a payment at a link stands: open from the moment the payer starts
+ * paying and while their bank turns them away, then paid once a payment
+ * goes through.
+ */
+export type LinkPaymentStatus = 'open' | 'paid';
+
+/**
+ * What a payment link lets the payer pay: the lines the merchant wrote
+ * (`fixed`), any amount they write themselves (`custom`), one of the
+ * amounts offered (`predefined`), or one of those or an amount of their
+ * own (`predefined_and_custom`).
+ */
+export type AmountType = 'fixed' | 'custom' | 'predefined' | 'predefined_and_custom';
+
+/** Whether a payment link is paid in the one money it names, or the payer picks one of those it offers. */
+export type CurrencyType = 'fixed' | 'selectable';
+
+/**
+ * How a link whose amount the payer picks reads its tax rate against what
+ * they pay: split out of it (`inclusive`: 100 paid is 83.33 and 16.67 tax
+ * at 20%), or added on top of it (`exclusive`: 100 written is 120 charged).
+ */
+export type TaxMode = 'inclusive' | 'exclusive';
 
 /**
  * Where a payment attempt stands. `timeout` is an attempt the provider
@@ -40,7 +65,8 @@ export type TransactionStatus =
 /**
  * What a webhook says happened. The first part is what it is about —
  * `order`, `payment_link`, `subscription`, `transaction` — and the webhook
- * carries that thing's token.
+ * carries that thing's token; a `payment_link.*` webhook carries the token
+ * of the payment at the link beside it.
  */
 export type WebhookEvent =
     | 'order.paid'
