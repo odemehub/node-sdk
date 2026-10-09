@@ -176,6 +176,8 @@ function checkout(message: Request.CheckoutMessage): Body {
         success_url: message.successUrl,
         cancel_url: message.cancelUrl,
         requires_shipping: message.requiresShipping,
+        locks_customer: message.locksCustomer,
+        emails_customer: message.emailsCustomer,
         items: message.items.map(item),
     });
 }
@@ -193,6 +195,8 @@ function checkoutChange(message: Request.UpdateCheckoutMessage): Body {
         success_url: message.successUrl,
         cancel_url: message.cancelUrl,
         requires_shipping: message.requiresShipping,
+        locks_customer: message.locksCustomer,
+        emails_customer: message.emailsCustomer,
         items: message.items?.map(item),
     });
 }
@@ -230,7 +234,7 @@ export function createPaymentLink(message: Request.CreatePaymentLink): Message {
             currency: message.currency,
             currency_type: message.currencyType,
             currencies: message.currencies,
-            emails_payer: message.emailsPayer,
+            emails_customer: message.emailsCustomer,
             expires_at: message.expiresAt,
             is_active: message.isActive,
             items: message.items?.map(item),
@@ -257,7 +261,7 @@ export function updatePaymentLink(message: Request.UpdatePaymentLink): Message {
             currency: message.currency,
             currency_type: message.currencyType,
             currencies: message.currencies,
-            emails_payer: message.emailsPayer,
+            emails_customer: message.emailsCustomer,
             expires_at: message.expiresAt,
             is_active: message.isActive,
             items: message.items?.map(item),

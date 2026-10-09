@@ -274,6 +274,19 @@ export interface CheckoutMessage {
      * there, and its price is added to the amount.
      */
     requiresShipping?: boolean;
+    /**
+     * Whether the customer stays as sent: the checkout page asks the payer
+     * nothing about who they are and only shows it. Takes a customer with a
+     * whole billing address, and a whole shipping address too when the
+     * goods are sent.
+     */
+    locksCustomer?: boolean;
+    /**
+     * Whether the customer is sent an e-mail at their billing address: on an
+     * order once it is paid, on a subscription whenever where it stands
+     * changes.
+     */
+    emailsCustomer?: boolean;
 }
 
 /**
@@ -294,6 +307,8 @@ export interface UpdateCheckoutMessage {
     /** `null` leaves the account to the team's Gate rules and default account again. */
     paymentProviderToken?: string | null;
     requiresShipping?: boolean | null;
+    locksCustomer?: boolean | null;
+    emailsCustomer?: boolean | null;
 }
 
 /**
@@ -386,8 +401,8 @@ export interface CreatePaymentLink {
     currencyType?: CurrencyType;
     /** The money the payer may pick besides `currency`; needed for `selectable`. */
     currencies?: Currency[];
-    /** Whether the payer is sent an e-mail once their payment goes through. Left out, they are not. */
-    emailsPayer?: boolean;
+    /** Whether the payer is sent an e-mail, at the address they give on the checkout page, once their payment goes through. Left out, they are not. */
+    emailsCustomer?: boolean;
     /** The last day the link may be paid, as `YYYY-MM-DD` in the team's own time; today or later. Left out, it never runs out. */
     expiresAt?: string;
     /** Whether the link takes payments. Left out, it does. */
@@ -418,7 +433,7 @@ export interface UpdatePaymentLink {
     taxMode?: TaxMode;
     currencyType?: CurrencyType;
     currencies?: Currency[] | null;
-    emailsPayer?: boolean;
+    emailsCustomer?: boolean;
     /** As `YYYY-MM-DD` in the team's own time; `null` lets it never run out. */
     expiresAt?: string | null;
     isActive?: boolean;

@@ -157,6 +157,7 @@ const created = await client.createOrder({
     },
     requiresShipping: true,                   // ödeyen adresini ve gönderim yöntemini sayfada seçer
     cancelUrl: 'https://magazam.com/sepet',
+    emailsCustomer: true,                     // ödeme tamamlanınca fatura adresindeki e-postaya bilgilendirme gider; varsayılan false
 });
 
 res.redirect(created.order.checkoutUrl!);     // müşteriyi buraya gönderin
@@ -165,9 +166,11 @@ created.order.amount;                         // geçidin hesapladığı toplam
 
 `saveAsProduct: true` olan kalem referansıyla ürün listenize yazılır (referans zorunlu). Gönderim yöntemleri istekte gönderilmez: panelinizdeki **Gönderim Yöntemleri** listesinden ödeyenin adresine uyanlar sunulur.
 
+**Müşteri kilidi.** `locksCustomer: true` gönderilirse ödeme sayfası müşteri bilgisi sormaz; gönderdiğiniz müşteriyi değiştirilemez şekilde gösterir ve ödemeyi onunla alır. Bu durumda fatura adresi eksiksiz olmalıdır; `requiresShipping: true` ise gönderim adresi de (gönderilmezse fatura adresi kullanılır). Eksik alan varsa geçit 422 ile reddeder.
+
 Referans tekil değildir: `createOrder()` her çağrıda yeni bir sipariş ve yeni bir token açar, aynı referans daha önce gönderilmiş olsa da. Var olan sipariş yeniden yazılmaz, tekrarlanan referans reddedilmez. Her yanıttaki `order.token`'ı saklayın; siparişi bundan sonra o adlandırır (`retrieveOrders({ token })`, `updateOrder({ token })`). Referansla sorgu o referanstaki bütün siparişleri getirir.
 
-Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `discount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
+Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `requiresShipping`, `locksCustomer`, `emailsCustomer`, `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `discount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
 
 **Kupon.** API'de kupon alanı yoktur; ödeyen kodu ödeme sayfasında girer. Kupon kullanılan siparişte `discount` (`code`, `amount`) dolu gelir, kullanılmayanda `null`. Siparişin `subtotal`, `taxAmount` ve `amount` değerleri indirim düşülmüş hâlidir; kupon gönderim ücretinden düşülmez.
 
@@ -197,7 +200,7 @@ const created = await client.createPaymentLink({
     currency: 'TRY',
     reference: 'LNK-1',                       // boş: geçit LINK{n} üretir
     expiresAt: '2026-12-31',                  // çalışma alanının saat dilimine göre gün
-    emailsPayer: true,                        // ödeme tamamlanınca ödeyene e-posta gider; varsayılan false
+    emailsCustomer: true,                     // ödeme tamamlanınca ödeyene, sayfada verdiği adrese e-posta gider; varsayılan false
 });
 
 created.paymentLink.token;                    // linki bundan sonra bu adlandırır; saklayın
@@ -245,7 +248,7 @@ donation.paymentLink.currencies;              // ['TRY', 'USD', 'EUR']
 
 Güncellemede `null` gönderilen alan boşaltılır; `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` de böyle boşaltılabilir. Tipin kullanmadığı alanları geçit kaydederken bırakır. Seçimli tipten `fixed`'e dönen (ya da `fixed`'de kalıp kalemi olmayan) link kalemlerini göndermek zorundadır.
 
-Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsPayer`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
+Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsCustomer`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
 
 **Link ödemeleri.** Linkte yapılan her ödeme bir link ödemesidir (`LinkPayment`): ödeyen ödemeye başlayınca `LINKPAY{n}` referansıyla açılır, ödeme geçince `paid` olur. Link ödemesini ödeyen açar, siz yalnız sorarsınız:
 
@@ -278,6 +281,7 @@ const created = await client.createSubscription({
     items: [{ name: 'Premium', unitAmount: '99.90', quantity: 1, taxRate: '20' }],
     customer: { reference: 'musteri-88' },
     renewalLimit: 12,                         // boş: iptale kadar
+    emailsCustomer: true,                     // her durum değişiminde fatura adresindeki e-postaya bilgilendirme gider
 });
 
 res.redirect(created.subscription.checkoutUrl!);
@@ -298,6 +302,8 @@ await client.updateSubscription({ token, status: 'cancelled' });
 Ödeyen ilk ödemede ödeme sayfasında kupon kullandıysa `subscription.discount` (`code`, `amount`) dolu gelir, kullanmadıysa `null`; kupon yalnız ilk ödemede geçerlidir. Aboneliğin kendi `subtotal`, `taxAmount` ve `amount` değerleri indirimsizdir; ilk ödemede çekilen indirimli tutar `renewal.amount`'tadır.
 
 İptalde para iade edilmez; ödenmiş dönem sonuna kadar sürer, sonra abonelik biter. Ödenmiş dönem yoksa hemen `cancelled` olur.
+
+`locksCustomer` siparişteki gibi çalışır; yanıt da siparişteki gibi `requiresShipping`, `locksCustomer` ve `emailsCustomer` taşır. `emailsCustomer` açıkken dönem ödemesi alınamazsa ödeme sayfasının bağlantısı doğrudan müşteriye gider, size ayrıca e-posta gelmez.
 
 İlk ödemeden sonra yalnızca iptal (`status`), ödeme sayısı (`renewalLimit`), dönem (`period`) ve aynı kalemlerin birim fiyatı değişebilir; müşteri dahil başka bir alan gönderilirse geçit `ValidationError` ile reddeder. `renewalLimit` şimdiye kadar ödenen yenileme sayısının altına inemez; `renewalLimit: null` aboneliği iptale kadar sürdürür.
 
@@ -513,6 +519,11 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 ## İstek sınırları
 
 Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.3'teki değişiklikler
+
+- **Müşteri kilidi ve müşteriye e-posta:** `createOrder()`, `updateOrder()`, `createSubscription()` ve `updateSubscription()` `locksCustomer` ve `emailsCustomer` alır. `Response.Order` ve `Response.Subscription` `requiresShipping`, `locksCustomer` ve `emailsCustomer` döner.
+- **Kırıcı: ödeme linkinde `emailsPayer` → `emailsCustomer`.** `createPaymentLink()`, `updatePaymentLink()` ve `Response.PaymentLink`'te alanın adı değişti; geçit eski `emails_payer` adını artık kabul etmez.
 
 ## 1.0.2'deki değişiklikler
 
