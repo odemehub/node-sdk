@@ -1,13 +1,13 @@
 {
   "name": "@odemehub/node-sdk",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ödemehub ödeme geçidi için Node.js istemcisi.",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/odemehub/node-sdk.git"
   },
-  "homepage": "https://github.com/odemehub/node-sdk#readme",
+  "homepage": "https://dev.odemehub.com/",
   "bugs": {
     "url": "https://github.com/odemehub/node-sdk/issues"
   },

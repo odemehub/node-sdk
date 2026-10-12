@@ -20,7 +20,7 @@ import { Signature } from './signature.js';
  * the address, so a pair only ever opens its own team's endpoints.
  */
 export interface Options {
-    /** The address the application is served from, e.g. https://app.odemehub.com. */
+    /** The address the application is served from, e.g. https://sandbox.odemehub.com while building and https://app.odemehub.com once live. */
     baseUrl: string;
     /** The team the payments are made on behalf of: the ten-digit workspace id the Entegrasyon page shows. */
     team: string;

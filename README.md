@@ -4,6 +4,8 @@
 
 İstemci her isteği gizli anahtarınızla imzalar, gelen her yanıtın imzasını doğrular. Siz imza, başlık ya da JSON ayrıntılarıyla uğraşmazsınız. Her uç nokta için bir metot vardır ve adı uç noktanın adıdır: `create-order` için `createOrder()`, `retrieve-saved-cards` için `retrieveSavedCards()`. TypeScript tipleri pakettedir; çalışma zamanı bağımlılığı yoktur.
 
+Uç noktaların, alanların ve akışların ayrıntılı anlatımı geliştirici dokümantasyonundadır: [dev.odemehub.com](https://dev.odemehub.com/).
+
 ## Kurulum
 
 Node.js 18 ve üzeri gerekir.
@@ -16,11 +18,13 @@ npm install @odemehub/node-sdk
 
 Üç bilgi gerekir. Hepsi paneldeki **Entegrasyon** sayfasındadır: Çalışma Alanı Kimliğiniz, API anahtarı ve gizli anahtar.
 
+Entegrasyonu sandbox'ta (`https://sandbox.odemehub.com`) geliştirin; sandbox'ta hesap açın ve bilgileri oradaki panelden alın. Canlıya çıkarken `app.odemehub.com` üzerinde açtığınız hesabın bilgileriyle `baseUrl`'i `https://app.odemehub.com` yapın.
+
 ```ts
 import { Client } from '@odemehub/node-sdk';
 
 const client = new Client({
-    baseUrl: 'https://app.odemehub.com',
+    baseUrl: 'https://sandbox.odemehub.com',
     team: '1000000001',                                  // Çalışma Alanı Kimliği
     apiKey: process.env.ODEMEHUB_API_KEY!,
     apiSecret: process.env.ODEMEHUB_API_SECRET!,
@@ -417,7 +421,7 @@ Referans tekil olmadığından `reference` ile sorgu birden çok kayıt dönebil
 
 ## Webhook
 
-Sipariş ödendiğinde, link ödemesi alındığında, abonelik durum değiştirdiğinde, API ödemesi bittiğinde ve bir ödeme iade ya da iptal edildiğinde geçit imzalı JSON POST eder. Adresler kodda verilmez; panelde **Ayarlar → Webhook** sayfasında olay ve adres seçilerek tanımlanır.
+Sipariş ödendiğinde, link ödemesi alındığında, abonelik durum değiştirdiğinde, API ödemesi bittiğinde ve bir ödeme iade ya da iptal edildiğinde geçit imzalı JSON POST eder. Adresler kodda verilmez; panelde **Ödeme Ayarları → Webhook** sayfasında tanımlanır. Bir adres birden çok olayı dinleyebilir; **Tüm olaylar** seçilirse her olay o adrese gelir. Aynı olay birden çok adreste seçilirse bildirim her adrese ayrı gider.
 
 | Kaynak | Olaylar |
 | --- | --- |
@@ -469,7 +473,9 @@ app.post('/odemehub/webhook', express.raw({ type: 'application/json' }), async (
 });
 ```
 
-Sipariş, link ve abonelikte para hareket eden olaylarda `transactionToken` da gelir; `payment_link.*` olaylarında ayrıca `linkPaymentToken`. `retrievePayments()` yanıtındaki `orderToken` / `paymentLinkToken` / `linkPaymentToken` / `subscriptionToken` ödemenin gerçekten o kaynağa ait olduğunu gösterir. Yalnızca doğrulamak için `client.verifyWebhook(...)` `boolean` döner. Geçit 2xx yanıt alana kadar 60 sn, 5 dk, 15 dk ve 30 dk arayla toplam 5 kez dener; yönlendirmeleri izlemez.
+Sipariş, link ve abonelikte para hareket eden olaylarda `transactionToken` da gelir; `payment_link.*` olaylarında ayrıca `linkPaymentToken`. `retrievePayments()` yanıtındaki `orderToken` / `paymentLinkToken` / `linkPaymentToken` / `subscriptionToken` ödemenin gerçekten o kaynağa ait olduğunu gösterir. Yalnızca doğrulamak için `client.verifyWebhook(...)` `boolean` döner. Adres https ve herkese açık olmalıdır.
+
+İlk gönderim olaydan 30 saniye sonra yapılır. Geçit 2xx yanıt alana kadar 60 sn, 5 dk, 15 dk ve 30 dk arayla toplam 5 kez dener; yönlendirmeleri izlemez. Adres panelden kapatılır ya da silinirse otomatik gönderimler durur. Denemeleri biten bildirim panelde ilgili kaydın sayfasından elle yeniden gönderilebilir; elle gönderim beklemeden, aynı `id` ve gövdeyle, bildirim kaydındaki adrese gider.
 
 ## Sabit değerler
 
@@ -519,6 +525,14 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 ## İstek sınırları
 
 Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.4'teki değişiklikler
+
+- **Sandbox'la başlayan kurulum:** README ve `Options.baseUrl` açıklaması entegrasyonu `https://sandbox.odemehub.com` üzerinde geliştirip canlıya çıkarken `baseUrl`'i `https://app.odemehub.com` yapmayı anlatır.
+- **Webhook anlatımı güncellendi:** menü **Ödeme Ayarları → Webhook**, bir adres birden çok olay (ya da **Tüm olaylar**), ilk gönderim olaydan 30 saniye sonra, kapatılan ya da silinen adrese otomatik gönderim yapılmaz, elle yeniden gönderim bildirim kaydındaki adrese gider.
+- **Dokümantasyon bağlantısı:** README ve `package.json` `homepage` geliştirici dokümantasyonunu ([dev.odemehub.com](https://dev.odemehub.com/)) gösterir.
+
+Kodda davranış değişikliği yoktur.
 
 ## 1.0.3'teki değişiklikler
 
