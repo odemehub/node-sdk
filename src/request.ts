@@ -87,15 +87,18 @@ export interface Customer {
 }
 
 /**
- * The customer a payment is made for: the whole billing address, and the
- * key the merchant keeps them under when it has one. The customer is
+ * The customer a payment is made for: the whole billing address, or what
+ * is known of it where the team fills the rest from its default payer
+ * (Varsayılan Ödeyen), and the key the merchant keeps them under when it
+ * has one. The customer is
  * written under the key once the payment goes through; a card is only
  * kept for, and a kept card only charged for, a customer named by it.
  */
 export interface PaymentCustomer {
     /** The key the merchant keeps this customer under in its own system. */
     reference?: string;
-    billingAddress: Person & Company;
+    /** All eight person fields, unless the team fills what is left out from its default payer; the three company fields together or not at all. */
+    billingAddress: BillingAddress;
 }
 
 /**
@@ -450,8 +453,8 @@ export interface UpdatePaymentLink {
  * and the ones with a real card store do not. It is never stored.
  */
 export interface CreateSavedCard {
-    /** Who the card belongs to: the key and the whole billing address. */
-    customer: { reference: string; billingAddress: Person & Company };
+    /** Who the card belongs to: the key and the whole billing address; what is left out of the address is filled from the team's default payer, where it uses one. */
+    customer: { reference: string; billingAddress: BillingAddress };
     card: Omit<Card, 'securityCode' | 'shouldSave'> & { securityCode?: string };
     /** The payment account to keep the card at; it has to keep cards. Left out, the team's default account is used. */
     paymentProviderToken?: string;

@@ -316,7 +316,7 @@ await client.updateSubscription({ token, status: 'cancelled' });
 Kart ödeme sırasında (`shouldSave: true`) ya da ödemesiz saklanır; ikisinde de `customer.reference` zorunludur. Kart o müşteriye bağlanır ve müşteri referansıyla bulunur; kart yanıtlarındaki `customer` yalnızca `reference` taşır. Ödemesiz saklamada müşteri, sağlayıcı kartı kabul edince gönderdiğiniz bilgilerle listenize yazılır.
 
 ```ts
-const saved = await client.createSavedCard({ customer, card });   // customer.reference ve tam fatura adresi zorunlu
+const saved = await client.createSavedCard({ customer, card });   // customer.reference zorunlu; fatura adresi tam olmalı (Varsayılan Ödeyen açıksa eksik olabilir)
 saved.savedCard?.token;                       // sağlayıcı saklamadıysa null, nedeni result.message
 
 const cards = await client.retrieveSavedCards({ customerReference: 'musteri-88' });
