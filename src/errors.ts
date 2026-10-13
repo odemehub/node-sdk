@@ -18,8 +18,9 @@ export class AuthenticationError extends OdemehubError {}
 
 /**
  * The credentials were accepted, but the team may not do this: it cannot
- * take payments for now (an unpaid balance, its plan), or its plan does not
- * include the feature the endpoint belongs to.
+ * take payments for now (an unpaid balance), or the module the endpoint
+ * belongs to is off for it. ödemehub turns modules on; get in touch to have
+ * one opened.
  */
 export class ForbiddenError extends OdemehubError {}
 

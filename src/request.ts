@@ -97,8 +97,14 @@ export interface Customer {
 export interface PaymentCustomer {
     /** The key the merchant keeps this customer under in its own system. */
     reference?: string;
-    /** All eight person fields, unless the team fills what is left out from its default payer; the three company fields together or not at all. */
-    billingAddress: BillingAddress;
+    /**
+     * All eight person fields; the three company fields together or not at
+     * all. Where the team uses a default payer, any of it — the address
+     * itself included — may be left out and is filled from the default
+     * payer; otherwise the gateway answers what is missing with a
+     * `ValidationError`.
+     */
+    billingAddress?: BillingAddress;
 }
 
 /**
@@ -124,7 +130,12 @@ export interface Payment {
     installmentNumber: number;
     /** The address the customer is paying from, as the merchant sees it. */
     ip: string;
-    customer: PaymentCustomer;
+    /**
+     * Who the payment is for. Left out only where the team fills the payer
+     * from its default payer (Varsayılan Ödeyen); a card kept, or a kept
+     * card charged, still needs `customer.reference`.
+     */
+    customer?: PaymentCustomer;
     /** The card typed in. Left out only when a kept card is named instead. */
     card?: Card;
     /**
@@ -453,8 +464,8 @@ export interface UpdatePaymentLink {
  * and the ones with a real card store do not. It is never stored.
  */
 export interface CreateSavedCard {
-    /** Who the card belongs to: the key and the whole billing address; what is left out of the address is filled from the team's default payer, where it uses one. */
-    customer: { reference: string; billingAddress: BillingAddress };
+    /** Who the card belongs to: the key, always, and the whole billing address; where the team uses a default payer, the address or any of it may be left out and is filled from the default payer. */
+    customer: { reference: string; billingAddress?: BillingAddress };
     card: Omit<Card, 'securityCode' | 'shouldSave'> & { securityCode?: string };
     /** The payment account to keep the card at; it has to keep cards. Left out, the team's default account is used. */
     paymentProviderToken?: string;
