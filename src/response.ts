@@ -667,6 +667,8 @@ export class PaymentList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly payments: Transaction[];
 
     constructor(fields: Fields<PaymentList>) {
@@ -683,6 +685,7 @@ export class PaymentList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             payments: list(body.payments).map((entry) => Transaction.fromBody(object(entry))),
         });
     }
@@ -912,6 +915,8 @@ export class OrderList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly orders: Order[];
 
     constructor(fields: Fields<OrderList>) {
@@ -923,6 +928,7 @@ export class OrderList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             orders: list(body.orders).map((entry) => Order.fromSummary(object(entry))),
         });
     }
@@ -1054,6 +1060,8 @@ export class PaymentLinkList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly paymentLinks: PaymentLink[];
 
     constructor(fields: Fields<PaymentLinkList>) {
@@ -1065,6 +1073,7 @@ export class PaymentLinkList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             paymentLinks: list(body.payment_links).map((entry) => PaymentLink.fromBody(object(entry))),
         });
     }
@@ -1193,6 +1202,8 @@ export class LinkPaymentList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly linkPayments: LinkPayment[];
 
     constructor(fields: Fields<LinkPaymentList>) {
@@ -1209,6 +1220,7 @@ export class LinkPaymentList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             linkPayments: list(body.link_payments).map((entry) => LinkPayment.fromBody(object(entry))),
         });
     }
@@ -1440,6 +1452,8 @@ export class SubscriptionList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly subscriptions: Subscription[];
 
     constructor(fields: Fields<SubscriptionList>) {
@@ -1451,6 +1465,7 @@ export class SubscriptionList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             subscriptions: list(body.subscriptions).map((entry) => Subscription.fromSummary(object(entry))),
         });
     }
@@ -1560,6 +1575,8 @@ export class SavedCardList {
     declare readonly createdFrom: string | null;
     /** The last day listed, the same way. */
     declare readonly createdTo: string | null;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
     declare readonly savedCards: SavedCard[];
 
     constructor(fields: Fields<SavedCardList>) {
@@ -1576,6 +1593,7 @@ export class SavedCardList {
             result: Result.fromBody(body),
             createdFrom: said(body.created_from),
             createdTo: said(body.created_to),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
             savedCards: list(body.saved_cards).map((entry) => SavedCard.fromBody(object(entry))),
         });
     }
@@ -1601,6 +1619,277 @@ export class DeletedSavedCard {
             result: Result.fromBody(body),
             savedCardToken: string(object(body.saved_card).token),
             customer: SavedCardCustomer.fromBody(object(body.customer)),
+        });
+    }
+}
+
+/**
+ * One credential a bank asks for before an account at it can be read.
+ */
+export class BankField {
+    /** The name it is sent under in `settings`, e.g. client_id. */
+    declare readonly key: string;
+    declare readonly required: boolean;
+    /** What it is called on the bank's side, for a person to read. */
+    declare readonly label: string;
+
+    constructor(fields: Fields<BankField>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(field: Body): BankField {
+        return new BankField({
+            key: string(field.key),
+            required: boolean(field.required),
+            label: string(field.label),
+        });
+    }
+}
+
+/**
+ * A bank whose accounts may be added, with the credentials it asks for.
+ */
+export class Bank {
+    /** The bank's id, sent as `provider` when an account at it is added, e.g. enpara. */
+    declare readonly id: string;
+    declare readonly title: string;
+    declare readonly fields: BankField[];
+
+    constructor(fields: Fields<Bank>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(bank: Body): Bank {
+        return new Bank({
+            id: string(bank.id),
+            title: string(bank.title),
+            fields: list(bank.fields).map((field) => BankField.fromBody(object(field))),
+        });
+    }
+}
+
+/**
+ * The banks whose accounts may be added.
+ */
+export class BankList {
+    declare readonly result: Result;
+    declare readonly banks: Bank[];
+
+    constructor(fields: Fields<BankList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): BankList {
+        return new BankList({
+            result: Result.fromBody(body),
+            banks: list(body.banks).map((entry) => Bank.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * A bank account whose movements the team reads. Its credentials are
+ * never shown.
+ */
+export class BankAccount {
+    /** The account's token in the gateway, which names it again and asks for its movements. */
+    declare readonly token: string;
+    /** The bank it is at, e.g. enpara. */
+    declare readonly provider: string;
+    declare readonly name: string;
+    /** In capitals, without spaces. */
+    declare readonly iban: string;
+    /** The last moment its movements were read from the bank, in UTC; null until they first are. */
+    declare readonly syncedAt: string | null;
+    /** Why the last reading failed, in the bank's own words; null when it went through. */
+    declare readonly lastError: string | null;
+    declare readonly createdAt: string | null;
+
+    constructor(fields: Fields<BankAccount>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(bankAccount: Body): BankAccount {
+        return new BankAccount({
+            token: string(bankAccount.token),
+            provider: string(bankAccount.provider),
+            name: string(bankAccount.name),
+            iban: string(bankAccount.iban),
+            syncedAt: said(bankAccount.synced_at),
+            lastError: said(bankAccount.last_error),
+            createdAt: said(bankAccount.created_at),
+        });
+    }
+}
+
+/**
+ * The answer about one bank account: added or changed.
+ */
+export class BankAccountDetails {
+    declare readonly result: Result;
+    /** The account as it now stands, or null when the bank turned the credentials down; `result.message` says why. */
+    declare readonly bankAccount: BankAccount | null;
+
+    constructor(fields: Fields<BankAccountDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): BankAccountDetails {
+        const bankAccount = optionalObject(body.bank_account);
+
+        return new BankAccountDetails({
+            result: Result.fromBody(body),
+            bankAccount: bankAccount === null ? null : BankAccount.fromBody(bankAccount),
+        });
+    }
+}
+
+/**
+ * Bank accounts asked after. The answer is always a list, oldest first,
+ * and an empty one when nothing matched.
+ */
+export class BankAccountList {
+    declare readonly result: Result;
+    declare readonly bankAccounts: BankAccount[];
+
+    constructor(fields: Fields<BankAccountList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): BankAccountList {
+        return new BankAccountList({
+            result: Result.fromBody(body),
+            bankAccounts: list(body.bank_accounts).map((entry) => BankAccount.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * A bank account removed, with every movement read off it.
+ */
+export class DeletedBankAccount {
+    declare readonly result: Result;
+    /** The token of the account removed. */
+    declare readonly bankAccountToken: string;
+
+    constructor(fields: Fields<DeletedBankAccount>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): DeletedBankAccount {
+        return new DeletedBankAccount({
+            result: Result.fromBody(body),
+            bankAccountToken: string(object(body.bank_account).token),
+        });
+    }
+}
+
+/**
+ * One movement on a bank account, as the bank booked it.
+ */
+export class BankTransaction {
+    /** The movement's token in the gateway. */
+    declare readonly token: string;
+    /** The account it was read off. */
+    declare readonly bankAccountToken: string;
+    /** When the bank booked it, in UTC. */
+    declare readonly bookedAt: string | null;
+    /** The day the money counts from, as `YYYY-MM-DD`, when the bank says. */
+    declare readonly valueDate: string | null;
+    /** Signed, with the kurus behind a point: above zero coming in, below going out, e.g. -40.00. */
+    declare readonly amount: string;
+    declare readonly currency: Known<Currency>;
+    /** What the account held once it was booked, when the bank says. */
+    declare readonly balanceAfter: string | null;
+    /** The bank's own description of it. */
+    declare readonly description: string | null;
+    /** What the sender wrote on it. */
+    declare readonly senderDescription: string | null;
+    /** The IBAN on the other side, when the bank says. */
+    declare readonly counterpartyIban: string | null;
+    /** The tax number of the other side, when the bank says. */
+    declare readonly counterpartyTaxNumber: string | null;
+
+    constructor(fields: Fields<BankTransaction>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(bankTransaction: Body): BankTransaction {
+        return new BankTransaction({
+            token: string(bankTransaction.token),
+            bankAccountToken: string(bankTransaction.bank_account_token),
+            bookedAt: said(bankTransaction.booked_at),
+            valueDate: said(bankTransaction.value_date),
+            amount: string(bankTransaction.amount),
+            currency: string(bankTransaction.currency),
+            balanceAfter: optionalString(bankTransaction.balance_after),
+            description: said(bankTransaction.description),
+            senderDescription: said(bankTransaction.sender_description),
+            counterpartyIban: said(bankTransaction.counterparty_iban),
+            counterpartyTaxNumber: said(bankTransaction.counterparty_tax_number),
+        });
+    }
+}
+
+/**
+ * Where a list that comes a page at a time stands.
+ */
+export class Pagination {
+    /** The page this is, from 1. */
+    declare readonly page: number;
+    declare readonly perPage: number;
+    /** How many records there are on every page together. */
+    declare readonly total: number;
+    /** The last page there is; 1 when there is nothing. */
+    declare readonly lastPage: number;
+
+    constructor(fields: Fields<Pagination>) {
+        Object.assign(this, fields);
+    }
+
+    /** Whether a page comes after this one. */
+    hasMorePages(): boolean {
+        return this.page < this.lastPage;
+    }
+
+    static fromBody(pagination: Body): Pagination {
+        return new Pagination({
+            page: integer(pagination.page),
+            perPage: integer(pagination.per_page),
+            total: integer(pagination.total),
+            lastPage: integer(pagination.last_page),
+        });
+    }
+}
+
+/**
+ * Movements on bank accounts asked after, a page at a time, oldest first
+ * by when the bank booked them, the accounts' movements woven together;
+ * an empty page when nothing matched. They are read from what the gateway
+ * keeps, which it reads from the bank within the hour, not from the bank
+ * itself. The days are the ones the gateway used: the ones asked for, or
+ * the last seven when none were.
+ */
+export class BankTransactionList {
+    declare readonly result: Result;
+    /** The first day listed, `YYYY-MM-DD` in the team's own time. */
+    declare readonly createdFrom: string | null;
+    /** The last day listed, the same way. */
+    declare readonly createdTo: string | null;
+    declare readonly pagination: Pagination;
+    declare readonly bankTransactions: BankTransaction[];
+
+    constructor(fields: Fields<BankTransactionList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): BankTransactionList {
+        return new BankTransactionList({
+            result: Result.fromBody(body),
+            createdFrom: said(body.created_from),
+            createdTo: said(body.created_to),
+            pagination: Pagination.fromBody(object(body.pagination)),
+            bankTransactions: list(body.bank_transactions).map((entry) => BankTransaction.fromBody(object(entry))),
         });
     }
 }

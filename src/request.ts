@@ -241,7 +241,7 @@ export interface Item {
     taxRate?: string;
     /** The merchant's own key for what is on the line, if it has one. */
     reference?: string;
-    /** The https address of the picture shown beside the line at checkout. */
+    /** The http or https address of the picture shown beside the line at checkout. */
     image?: string;
     /**
      * Whether the line is also kept on the team's product list: written
@@ -267,7 +267,7 @@ export interface CheckoutMessage {
     reference: string;
     /** Where the customer is posted back to once it is paid. */
     successUrl: string;
-    /** What it is for; at least one line. */
+    /** What it is for; one line to a hundred. */
     items: Item[];
     /** Who it is for, as far as the merchant knows; the rest is asked on the checkout page. */
     customer?: Customer;
@@ -394,7 +394,7 @@ export interface UpdateSubscription extends UpdateCheckoutMessage {
 export interface CreatePaymentLink {
     /** The money the link is priced in, and the one the payer starts with where they may pick another. */
     currency: Currency;
-    /** What the link is for; at least one line on a `fixed` link, passed over on the others. */
+    /** What the link is for; one line to a hundred on a `fixed` link, passed over on the others. */
     items?: Item[];
     /** The reference the link is known by in the calling system. Has to carry at least one digit; it need not be unique. */
     reference?: string;
@@ -429,14 +429,16 @@ export interface CreatePaymentLink {
  * field set to `null` is set to nothing. A link turned back to `fixed`, or
  * left `fixed` without lines, has to be sent its lines. Switching a link
  * off is `isActive: false`; one whose day has gone by is switched back on
- * by giving it a new `expiresAt`.
+ * by giving it a new `expiresAt`. A change that sends nothing but the
+ * token is turned down with a `ValidationError`.
  */
 export interface UpdatePaymentLink {
     /** The link's token in the gateway. */
     token: string;
     items?: Item[];
     currency?: Currency;
-    reference?: string;
+    /** `null` gives the link a new reference of the form `LINK{n}`, the way one opened without a reference is given one. */
+    reference?: string | null;
     description?: string | null;
     paymentProviderToken?: string | null;
     amountType?: AmountType;
@@ -444,7 +446,8 @@ export interface UpdatePaymentLink {
     predefinedAmounts?: string[] | null;
     /** `null` leaves the amount the payer picks without tax. */
     taxRate?: string | null;
-    taxMode?: TaxMode;
+    /** `null` sets it back to `inclusive`. */
+    taxMode?: TaxMode | null;
     currencyType?: CurrencyType;
     currencies?: Currency[] | null;
     emailsCustomer?: boolean;
@@ -505,6 +508,10 @@ export type DeleteSavedCard = SavedCardMessage;
  * it is the last seven days up to today. The answer is always a list,
  * oldest first, and an empty one when nothing matches. Nothing is changed
  * by asking.
+ *
+ * The answer always comes a page at a time and says where it stands under
+ * `pagination`; sent neither `page` nor `perPage`, it is the first page of
+ * 250 records.
  */
 export interface Retrieve {
     /** The record's token in the gateway. */
@@ -515,6 +522,10 @@ export interface Retrieve {
     createdFrom?: string;
     /** The last day, as `YYYY-MM-DD`, at most six days after the first. */
     createdTo?: string;
+    /** The page, from 1. Left out, the first. */
+    page?: number;
+    /** How many records a page holds, at most 250. Left out, 50 when `page` is sent and 250 when it is not. */
+    perPage?: number;
 }
 
 /**
@@ -552,4 +563,81 @@ export type RetrieveLinkPayments = Retrieve;
 export interface RetrieveSavedCards extends Omit<Retrieve, 'reference'> {
     /** The merchant's reference for the customer the cards are kept for. */
     customerReference?: string;
+}
+
+/**
+ * A bank account whose movements are to be read. The gateway first asks
+ * the bank whether the credentials read the account with the IBAN; one the
+ * bank turns down is not added, and the answer says why. An added account
+ * is named by the token the gateway gives it from then on.
+ */
+export interface CreateBankAccount {
+    /** The bank's id, as `retrieveBanks()` lists it, e.g. `enpara`. */
+    provider: string;
+    /** What the account is called in the panel and the listing. */
+    name: string;
+    /** The account's IBAN; spaces and small letters are fine. An IBAN is added once per team. */
+    iban: string;
+    /** Every credential the bank asks for, keyed the way `retrieveBanks()` lists them. */
+    settings: Record<string, string>;
+}
+
+/**
+ * Something asked of or done to a bank account, named by the token the
+ * gateway gave it.
+ */
+export interface BankAccountMessage {
+    /** The account's token in the gateway. */
+    token: string;
+}
+
+/**
+ * A change to a bank account: its name, and the credentials given, the
+ * rest staying as they are. New credentials are tried against the bank
+ * first and kept only if it lets them read the account. Its bank and its
+ * IBAN do not change; an account at another bank or IBAN is another
+ * account. A change that sends neither a name nor credentials is turned
+ * down with a `ValidationError`.
+ */
+export interface UpdateBankAccount extends BankAccountMessage {
+    name?: string;
+    /** Only the credentials to replace. */
+    settings?: Record<string, string>;
+}
+
+/**
+ * Removing a bank account, with every movement read off it. Its
+ * credentials go too, unless another account is read with them.
+ */
+export type DeleteBankAccount = BankAccountMessage;
+
+/**
+ * Bank accounts asked after: the ones whose tokens are given, or every
+ * account of the team's when none is. A token that is not the team's
+ * finds nothing. Nothing is changed by asking.
+ */
+export interface RetrieveBankAccounts {
+    /** The accounts' tokens, at most fifty; left out, every account. */
+    tokens?: string[];
+}
+
+/**
+ * The movements on one or more bank accounts, named by their tokens,
+ * booked between two days as `YYYY-MM-DD` in the team's own time, both
+ * ends counted and at most seven days apart; the last seven days when none
+ * are given. The days are the bank's: the day it booked the movement, not
+ * the day the gateway read it. The answer comes a page at a time, oldest
+ * first, the accounts' movements woven together.
+ */
+export interface RetrieveBankTransactions {
+    /** The accounts' tokens, one to fifty. */
+    bankAccountTokens: string[];
+    /** The first day, as `YYYY-MM-DD`. Given together with `createdTo`. */
+    createdFrom?: string;
+    /** The last day, as `YYYY-MM-DD`, at most six days after the first. */
+    createdTo?: string;
+    /** The page, from 1. Left out, the first. */
+    page?: number;
+    /** How many movements a page holds, at most 250. Left out, 50 when `page` is sent and 250 when it is not. */
+    perPage?: number;
 }

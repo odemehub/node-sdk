@@ -97,9 +97,6 @@ export type SecurityType = 'secure' | 'regular';
 /** How money went back out of a payment: the whole of it before settlement (cancel), or after it (refund). */
 export type RefundType = 'cancel' | 'refund';
 
-/** Where a giving back stands. */
-export type RefundStatus = 'pending' | 'successful' | 'failed';
-
 /** The network a card belongs to. */
 export type CardScheme =
     | 'visa'

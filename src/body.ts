@@ -136,8 +136,9 @@ export function cancelPayment(message: Request.CancelPayment): Message {
 }
 
 /**
- * Asking after records of one kind, by token, by reference or by days; the
- * reference travels under the name the endpoint gives it.
+ * Asking after records of one kind, by token, by reference or by days, a
+ * page at a time when one is asked for; the reference travels under the
+ * name the endpoint gives it.
  */
 function retrieve(path: string, message: Request.Retrieve, referenceField = 'reference'): Message {
     return post(path, said({
@@ -145,6 +146,8 @@ function retrieve(path: string, message: Request.Retrieve, referenceField = 'ref
         [referenceField]: message.reference,
         created_from: message.createdFrom,
         created_to: message.createdTo,
+        page: message.page,
+        per_page: message.perPage,
     }));
 }
 
@@ -328,4 +331,47 @@ export function updateSavedCard(message: Request.UpdateSavedCard): Message {
 
 export function deleteSavedCard(message: Request.DeleteSavedCard): Message {
     return post(`delete-saved-card/${token(message.token)}`, { token: message.token });
+}
+
+export function retrieveBanks(): Message {
+    return post('retrieve-banks', {});
+}
+
+export function createBankAccount(message: Request.CreateBankAccount): Message {
+    return post('create-bank-account', {
+        bank_account: {
+            provider: message.provider,
+            name: message.name,
+            iban: message.iban,
+            settings: message.settings,
+        },
+    });
+}
+
+export function retrieveBankAccounts(message: Request.RetrieveBankAccounts): Message {
+    return post('retrieve-bank-accounts', said({ tokens: message.tokens }));
+}
+
+export function updateBankAccount(message: Request.UpdateBankAccount): Message {
+    return post(`update-bank-account/${token(message.token)}`, {
+        token: message.token,
+        bank_account: said({
+            name: message.name,
+            settings: message.settings,
+        }),
+    });
+}
+
+export function deleteBankAccount(message: Request.DeleteBankAccount): Message {
+    return post(`delete-bank-account/${token(message.token)}`, { token: message.token });
+}
+
+export function retrieveBankTransactions(message: Request.RetrieveBankTransactions): Message {
+    return post('retrieve-bank-transactions', said({
+        bank_account_tokens: message.bankAccountTokens,
+        created_from: message.createdFrom,
+        created_to: message.createdTo,
+        page: message.page,
+        per_page: message.perPage,
+    }));
 }

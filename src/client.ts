@@ -221,6 +221,55 @@ export class Client {
     }
 
     /**
+     * The banks whose accounts may be added, each with the credentials it
+     * asks for.
+     */
+    async retrieveBanks(): Promise<Response.BankList> {
+        return Response.BankList.fromBody(await this.send(body.retrieveBanks()));
+    }
+
+    /**
+     * Add a bank account whose movements are to be read. The bank is asked
+     * first; credentials it turns down add nothing, and the answer says why
+     * rather than raising.
+     */
+    async createBankAccount(bankAccount: Request.CreateBankAccount): Promise<Response.BankAccountDetails> {
+        return Response.BankAccountDetails.fromBody(await this.send(body.createBankAccount(bankAccount)));
+    }
+
+    /**
+     * Bank accounts as they stand — by token, or every account of the
+     * team's when none is named.
+     */
+    async retrieveBankAccounts(bankAccounts: Request.RetrieveBankAccounts = {}): Promise<Response.BankAccountList> {
+        return Response.BankAccountList.fromBody(await this.send(body.retrieveBankAccounts(bankAccounts)));
+    }
+
+    /**
+     * Rename a bank account or replace its credentials. Only what is sent is
+     * written; new credentials are tried against the bank first.
+     */
+    async updateBankAccount(bankAccount: Request.UpdateBankAccount): Promise<Response.BankAccountDetails> {
+        return Response.BankAccountDetails.fromBody(await this.send(body.updateBankAccount(bankAccount)));
+    }
+
+    /**
+     * Remove a bank account and every movement read off it.
+     */
+    async deleteBankAccount(bankAccount: Request.DeleteBankAccount): Promise<Response.DeletedBankAccount> {
+        return Response.DeletedBankAccount.fromBody(await this.send(body.deleteBankAccount(bankAccount)));
+    }
+
+    /**
+     * Movements on bank accounts, by the accounts' tokens, over seven days
+     * at most, a page at a time. They are read from what the gateway keeps,
+     * which it reads from the bank within the hour.
+     */
+    async retrieveBankTransactions(bankTransactions: Request.RetrieveBankTransactions): Promise<Response.BankTransactionList> {
+        return Response.BankTransactionList.fromBody(await this.send(body.retrieveBankTransactions(bankTransactions)));
+    }
+
+    /**
      * Read a word the gateway posted to one of the merchant's webhook
      * addresses. Hand it the request exactly as it arrived — the method,
      * the path of the address it came to (without the query string), the

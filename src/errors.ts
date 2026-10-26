@@ -52,8 +52,10 @@ export class UnexpectedResponseError extends OdemehubError {
 }
 
 /**
- * The record the request names — by its token, or by the merchant's own
- * reference for it — is not one of the team's.
+ * The record a change names by its token — an update, a delete, a refund
+ * or a cancel — is not one of the team's. Asking after records never
+ * raises this: a token, a reference or days that match nothing answer
+ * with an empty list.
  */
 export class NotFoundError extends OdemehubError {}
 

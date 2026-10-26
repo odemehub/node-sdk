@@ -1,6 +1,6 @@
 # ödemehub Node.js SDK
 
-ödemehub ödeme geçidini kendi uygulamanızdan kullanmak için hazırlanmış Node.js istemcisi. Kart çekmek, 3D ödeme başlatmak, sipariş, abonelik ve ödeme linki açmak, kart saklamak, iade ve iptal yapmak, taksit sormak: hepsi burada.
+ödemehub ödeme geçidini kendi uygulamanızdan kullanmak için hazırlanmış Node.js istemcisi. Kart çekmek, 3D ödeme başlatmak, sipariş, abonelik ve ödeme linki açmak, kart saklamak, iade ve iptal yapmak, taksit sormak, banka hareketlerini okumak: hepsi burada.
 
 İstemci her isteği gizli anahtarınızla imzalar, gelen her yanıtın imzasını doğrular. Siz imza, başlık ya da JSON ayrıntılarıyla uğraşmazsınız. Her uç nokta için bir metot vardır ve adı uç noktanın adıdır: `create-order` için `createOrder()`, `retrieve-saved-cards` için `retrieveSavedCards()`. TypeScript tipleri pakettedir; çalışma zamanı bağımlılığı yoktur.
 
@@ -33,7 +33,7 @@ const client = new Client({
 
 Gizli anahtar hiçbir zaman tel üzerinden gitmez; yalnızca imza üretmekte ve doğrulamakta kullanılır. Anahtarları kodun içine yazmayın, ortam değişkeninde tutun.
 
-Geçit hiçbir yerde veritabanı numarası kullanmaz: ödeme hesabı, işlem, sipariş, abonelik, link, link ödemesi ve kayıtlı kart her zaman token'ıyla anılır.
+Geçit hiçbir yerde veritabanı numarası kullanmaz: ödeme hesabı, işlem, sipariş, abonelik, link, link ödemesi, kayıtlı kart, banka hesabı ve banka hareketi her zaman token'ıyla anılır.
 
 İstek bir dakika içinde yanıt almazsa kesilir; süreyi `timeout` (milisaniye) ile değiştirebilirsiniz. İstekler Node'un kendi `fetch`'iyle gider; kendi `fetch`'inizi `fetch` seçeneğiyle verebilirsiniz.
 
@@ -130,6 +130,8 @@ if (payment.redirectUrl !== null) {
 }
 ```
 
+Dönüş adresleri (`callbackUrl`, siparişte ve abonelikte `successUrl` / `cancelUrl`) canlıda https ile başlamalı ve internetten erişilebilir olmalıdır (localhost ve iç ağ adresleri reddedilir). Sandbox'ta http ya da https her adres kabul edilir; dönüş adresi olarak localhost kullanabilirsiniz.
+
 Başarılı yanıt **ödeme alındı demek değildir**; müşterinin gideceği adres hazır demektir. Adres 15 dakika geçerlidir; süresinde açılmayan ödeme `expired` olur.
 
 Banka işini bitirince müşterinin tarayıcısı `callbackUrl` adresinize şu alanları POST eder: `transaction_token`, `reference`, `successful` (`1`/`0`). Bu POST imzasızdır ve müşterinin tarayıcısından gelir; yalnızca ipucudur. Sonucu kendi imzalı bağlantınızdan sorun:
@@ -170,7 +172,7 @@ res.redirect(created.order.checkoutUrl!);     // müşteriyi buraya gönderin
 created.order.amount;                         // geçidin hesapladığı toplam
 ```
 
-`saveAsProduct: true` olan kalem referansıyla ürün listenize yazılır (referans zorunlu). Gönderim yöntemleri istekte gönderilmez: panelinizdeki **Gönderim Yöntemleri** listesinden ödeyenin adresine uyanlar sunulur.
+Bir istekte en az 1, en çok 100 kalem gönderilir (sipariş, abonelik ve linkte aynı). `saveAsProduct: true` olan kalem referansıyla ürün listenize yazılır (referans zorunlu). Gönderim yöntemleri istekte gönderilmez: panelinizdeki **Gönderim Yöntemleri** listesinden ödeyenin adresine uyanlar sunulur.
 
 **Müşteri kilidi.** `locksCustomer: true` gönderilirse ödeme sayfası müşteri bilgisi sormaz; gönderdiğiniz müşteriyi değiştirilemez şekilde gösterir ve ödemeyi onunla alır. Bu durumda fatura adresi eksiksiz olmalıdır; `requiresShipping: true` ise gönderim adresi de (gönderilmezse fatura adresi kullanılır). Eksik alan varsa geçit 422 ile reddeder.
 
@@ -252,7 +254,7 @@ donation.paymentLink.amount;                  // seçimli tipte null; subtotal v
 donation.paymentLink.currencies;              // ['TRY', 'USD', 'EUR']
 ```
 
-Güncellemede `null` gönderilen alan boşaltılır; `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` de böyle boşaltılabilir. Tipin kullanmadığı alanları geçit kaydederken bırakır. Seçimli tipten `fixed`'e dönen (ya da `fixed`'de kalıp kalemi olmayan) link kalemlerini göndermek zorundadır.
+Güncellemede `null` gönderilen alan boşaltılır; `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` de böyle boşaltılabilir. `reference: null` linke yeni bir `LINK{n}` referansı verir, `taxMode: null` `inclusive`'e döndürür; verilmeyen alan gövdeye yazılmaz ve değişmez. Yalnızca token'la (değiştirilecek alan olmadan) çağrılan `updatePaymentLink()` `ValidationError` döner. Tipin kullanmadığı alanları geçit kaydederken bırakır. Seçimli tipten `fixed`'e dönen (ya da `fixed`'de kalıp kalemi olmayan) link kalemlerini göndermek zorundadır.
 
 Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsCustomer`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
 
@@ -335,6 +337,68 @@ Kart saklamada güvenlik kodu, gerçek kart deposu olmayan sağlayıcılarda ger
 
 Kartı başka bir kartı varsayılan yaparak varsayılanlıktan çıkarırsınız. Silme önce sağlayıcıda yapılır; sağlayıcı bırakmazsa kart kalır ve `result.message` nedenini söyler.
 
+## Banka hareketleri
+
+Banka hesaplarınızı ekler, hesaplara giren ve çıkan parayı okursunuz. Uçlar **Banka Hareketleri** modülünü ister; modül kapalıysa `ForbiddenError` döner. Hesap yalnızca geçidin verdiği `token`'la anılır; sizdeki referans yoktur. Kimlik bilgileri hiçbir yanıtta dönmez.
+
+```ts
+const { banks } = await client.retrieveBanks();
+banks[0].id;                                  // enpara
+banks[0].fields;                              // [{ key: 'client_id', required: true, label: 'Client ID' }, ...]
+
+const created = await client.createBankAccount({
+    provider: 'enpara',                       // retrieveBanks() yanıtındaki id
+    name: 'Ana hesap',
+    iban: 'TR12 0001 2345 6789 0123 4567 89', // boşluklu ya da boşluksuz
+    settings: {                               // bankanın istediği bütün alanlar, fields'taki key'lerle
+        client_id: '...',
+        client_secret: '...',
+        access_token: '...',
+        refresh_token: '...',
+    },
+});
+created.bankAccount?.token;                   // banka reddettiyse null, nedeni result.message
+
+const accounts = await client.retrieveBankAccounts();                        // bütün hesaplar, eskiden yeniye
+const [one] = (await client.retrieveBankAccounts({ tokens: [accountToken] })).bankAccounts;
+one.syncedAt;                                 // bankadan son okunduğu an; henüz okunmadıysa null
+one.lastError;                                // son okuma neden olmadı, bankanın sözüyle; olduysa null
+
+await client.updateBankAccount({ token: accountToken, name: 'Maaş hesabı' });
+await client.updateBankAccount({ token: accountToken, settings: { access_token: '...', refresh_token: '...' } });
+await client.deleteBankAccount({ token: accountToken });
+```
+
+Hesap eklenirken geçit önce bankaya bağlanmayı dener. Banka reddederse hata fırlatılmaz: `result.successful` false, `result.message` bankanın mesajı, `bankAccount` `null` döner; hesap eklenmez. IBAN boşlukları silinip büyük harfe çevrilerek saklanır; `TR` ve 24 rakam olmalıdır ve aynı IBAN çalışma alanına bir kez eklenir. Güncellemede yalnızca gönderilen alanlar değişir; ne `name` ne `settings` gönderilirse geçit `ValidationError` döner. `settings` gönderilirse yeni bilgiler önce bankada denenir, banka reddederse hiçbir şey değişmez. Banka ve IBAN değişmez. Silme hesabı, ondan okunan bütün hareketleri ve (başka hesap kullanmıyorsa) kimlik bilgilerini siler.
+
+```ts
+const movements = await client.retrieveBankTransactions({
+    bankAccountTokens: [accountToken],        // 1–50 hesap
+    createdFrom: '2026-10-20',                // en çok 7 gün; ikisi de verilmezse son 7 gün
+    createdTo: '2026-10-26',
+    page: 1,                                  // varsayılan 1
+    perPage: 100,                             // 1–250; verilmezse page varken 50, ikisi de yokken 250
+});
+
+for (const movement of movements.bankTransactions) {
+    movement.bookedAt;                        // bankanın kaydettiği an, ISO 8601 UTC
+    movement.amount;                          // işaretli: '22164.96' giren, '-40.00' çıkan
+    movement.currency;                        // TRY, USD, EUR, GBP
+    movement.balanceAfter;
+    movement.description;                     // bankanın açıklaması
+    movement.senderDescription;               // gönderenin yazdığı açıklama
+    movement.counterpartyIban;
+    movement.bankAccountToken;                // birden çok hesap sorulduysa hangisinden
+}
+
+movements.pagination;                         // { page, perPage, total, lastPage }
+movements.pagination.hasMorePages();
+```
+
+Hareketler bankadan değil, geçidin sakladığı kayıttan okunur. Geçit her hesabı saatte bir (ve paneldeki **Şimdi Güncelle** ile) bankadan çeker; veri en çok bir saat geride olabilir. Hesap eklenince son 7 günün hareketleri çekilir. Tarihler çalışma alanının saat dilimindedir ve bankanın tarihine (`bookedAt`) bakar; liste eskiden yeniye, birden çok hesap verilirse hareketler bankanın tarihine göre iç içe sıralanır. Başka bir çalışma alanının ya da var olmayan bir hesabın token'ı hiçbir şey bulmaz (404 değil, boş liste). Banka hareketleri için webhook yoktur.
+
+Banka hesabı (`Response.BankAccount`): `token`, `provider`, `name`, `iban`, `syncedAt`, `lastError`, `createdAt`. Hareket (`Response.BankTransaction`): `token`, `bankAccountToken`, `bookedAt`, `valueDate` (`YYYY-MM-DD` ya da `null`), `amount`, `currency`, `balanceAfter`, `description`, `senderDescription`, `counterpartyIban`, `counterpartyTaxNumber`.
+
 ## İade ve iptal
 
 ```ts
@@ -392,7 +456,7 @@ Panelde **Ödeme Ayarları → Kur Çevirici** altında bir kural tanımladıysa
 
 ## Sorgulama
 
-Her kaynak tek bir `retrieve-*` ucuyla sorulur ve yanıt her zaman bir listedir (eskiden yeniye); eşleşen yoksa boş liste döner. Kayıt üç yoldan biriyle adlandırılır: `token`, sizdeki `reference` ya da açıldığı günler (`createdFrom` / `createdTo`). Aralık en çok 7 gündür ve çalışma alanının saat dilimindedir; hiçbiri verilmezse son 7 gün.
+Her kaynak tek bir `retrieve-*` ucuyla sorulur ve yanıt her zaman bir listedir (eskiden yeniye); eşleşen yoksa boş liste döner. Kayıt üç yoldan biriyle adlandırılır: `token`, sizdeki `reference` ya da açıldığı günler (`createdFrom` / `createdTo`). Aralık en çok 7 gündür ve çalışma alanının saat dilimindedir; hiçbiri verilmezse son 7 gün. Banka hesapları ve hareketleri bu kalıba uymaz: `retrieveBankAccounts()` token listesiyle (ya da boş) sorulur, `retrieveBankTransactions()` hesap token'larıyla, günlerle ve her zaman sayfa sayfa (bkz. [Banka hareketleri](#banka-hareketleri)).
 
 ```ts
 // Yanıtı alınamayan bir ödemenin akıbeti: referanstaki bütün denemeler
@@ -417,6 +481,23 @@ await client.retrieveSubscriptions({ reference: 'ABO-1' });
 await client.retrievePaymentLinks({ createdFrom: '2026-09-26', createdTo: '2026-10-02' });
 await client.retrieveLinkPayments({ reference: 'LINKPAY1' });   // link ödemesinin referansı geçidin verdiği LINKPAY{n}
 await client.retrieveSavedCards({ customerReference: 'musteri-88' });
+```
+
+**Sayfa sayfa sorgu.** Bütün sorgular sayfalıdır ve yanıtta her zaman `pagination` (`page`, `perPage`, `total`, `lastPage`) gelir. Altı sorgu metodu (`retrievePayments`, `retrieveOrders`, `retrieveSubscriptions`, `retrievePaymentLinks`, `retrieveLinkPayments`, `retrieveSavedCards`) filtrelerin yanında isteğe bağlı `page` (1'den başlar) ve `perPage` (1–250) alır. `page` verilip `perPage` verilmezse sayfa 50 kayıttır; ikisi de verilmezse ilk sayfa 250 kayıtla gelir. Yoğun bir çalışma alanında 7 günde binlerce kayıt olabilir: `pagination.total` 250'yi aşıyorsa listenin yalnız başını almışsınızdır, sayfa sayfa dolaşın. Sıralama değişmez.
+
+```ts
+let page = 1;
+let list;
+
+do {
+    list = await client.retrievePayments({ createdFrom: '2026-09-26', createdTo: '2026-10-02', page, perPage: 100 });
+
+    for (const transaction of list.payments) {
+        // ...
+    }
+
+    page++;
+} while (list.pagination?.hasMorePages());
 ```
 
 Referans tekil olmadığından `reference` ile sorgu birden çok kayıt dönebilir; tek bir kaydı `token` ile sorun. Linkte alınan bir denemenin `reference`'ı link ödemesinin `LINKPAY{n}` referansıdır; linkin kendi referansıyla `retrievePayments` denemeleri getirmez, linkin denemeleri `retrievePaymentLinks` yanıtındaki `transactions`'ta ya da `retrieveLinkPayments` ile bulunur.
@@ -481,7 +562,7 @@ Sipariş, link ve abonelikte para hareket eden olaylarda `transactionToken` da g
 
 ## Sabit değerler
 
-Sabit değer kümeleri string-literal union tipleridir ve paketten dışa açılır: `Currency`, `Period`, `OrderStatus`, `SubscriptionStatus`, `LinkPaymentStatus`, `AmountType`, `CurrencyType`, `TaxMode`, `TransactionStatus`, `PaymentStatus`, `SecurityType`, `RefundType`, `RefundStatus`, `CardScheme`, `CardType`, `WebhookEvent`.
+Sabit değer kümeleri string-literal union tipleridir ve paketten dışa açılır: `Currency`, `Period`, `OrderStatus`, `SubscriptionStatus`, `LinkPaymentStatus`, `AmountType`, `CurrencyType`, `TaxMode`, `TransactionStatus`, `PaymentStatus`, `SecurityType`, `RefundType`, `CardScheme`, `CardType`, `WebhookEvent`.
 
 ```ts
 import type { SubscriptionStatus } from '@odemehub/node-sdk';
@@ -499,7 +580,7 @@ Bütün hatalar `OdemehubError`'dan türer; tek bir `instanceof` kontrolü hepsi
 | --- | --- | --- |
 | `AuthenticationError` | 401 | API anahtarı yanlış, imza tutmuyor ya da zaman damgası aralık dışında |
 | `ForbiddenError` | 403 | Çalışma alanı işlem yapamıyor (ödenmemiş bakiye) ya da ucun modülü kapalı; açtırmak için bizimle iletişime geçin |
-| `NotFoundError` | 404 | Güncellenmek, silinmek, iade ya da iptal edilmek istenen kayıt yok (sorgularda boş liste döner) |
+| `NotFoundError` | 404 | Token'ıyla güncellenmek, silinmek, iade ya da iptal edilmek istenen kayıt çalışma alanınızın değil (`updateBankAccount` ve `deleteBankAccount` dahil). Sorgular (token, referans ya da tarihle) bulunamayan kayıtta hata fırlatmaz, boş liste döner |
 | `ValidationError` | 422 | Alan hataları; `error.errors` noktalı alan adıyla (`transaction.amount`, `order.items.0.name`) |
 | `RateLimitError` | 429 | İstek sınırı; `error.retryAfter` saniye |
 | `SignatureError` | — | Yanıtın ya da webhook'un imzası doğrulanamadı; içeriğe güvenmeyin |
@@ -526,7 +607,23 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 
 ## İstek sınırları
 
-Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Banka hareketleri uçları yalnızca genel sınıra girer. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.6'daki değişiklikler
+
+Eklenenler:
+
+- **Banka hareketleri:** yeni `retrieveBanks()`, `createBankAccount()`, `retrieveBankAccounts()`, `updateBankAccount()`, `deleteBankAccount()` ve `retrieveBankTransactions()` metotları; yeni `Request.CreateBankAccount`, `Request.UpdateBankAccount`, `Request.DeleteBankAccount`, `Request.RetrieveBankAccounts`, `Request.RetrieveBankTransactions` istekleri ve `Response.BankList` (`Bank`, `BankField`), `Response.BankAccountDetails`, `Response.BankAccountList`, `Response.DeletedBankAccount`, `Response.BankTransactionList` (`BankTransaction`, `Pagination`) modelleri. Banka bağlantıyı reddederse `createBankAccount()` ve `updateBankAccount()` hata fırlatmaz; `result.successful` false ve `bankAccount` `null` döner. `retrieveBankTransactions()` her zaman sayfalıdır (`page`, `perPage`; yanıtta `pagination`). Uçlar **Banka Hareketleri** modülünü ister.
+- **Sorgularda sayfalama:** `retrievePayments()`, `retrieveOrders()`, `retrieveSubscriptions()`, `retrievePaymentLinks()`, `retrieveLinkPayments()` ve `retrieveSavedCards()` isteğe bağlı `page` ve `perPage` (1–250) alır (`Request.Retrieve`). `PaymentList`, `OrderList`, `SubscriptionList`, `PaymentLinkList`, `LinkPaymentList` ve `SavedCardList` yeni `pagination` alanını (`Response.Pagination`) taşır; geçit onu her zaman gönderir. `page` verilip `perPage` verilmezse sayfa 50 kayıttır, ikisi de verilmezse ilk sayfa 250 kayıttır. Geçitte davranış değişikliği: sayfa istemeyen bir sorgu artık bütün kayıtları değil ilk 250'yi döner; daha fazlası varsa `pagination.total` gösterir, kalanını sayfa sayfa isteyin. Var olan çağrılar SDK tarafında değişmeden derlenir ve çalışır.
+
+Değişenler:
+
+- **`UpdatePaymentLink.reference` ve `taxMode` `null` alır:** `null` gövdeye `null` olarak gider; `reference: null` linke yeni bir `LINK{n}` referansı verir, `taxMode: null` `inclusive`'e döndürür. Verilmeyen alan eskisi gibi gövdeye yazılmaz.
+- **Açıklamalar düzeltildi:** `NotFoundError` yalnızca token'la adlanan güncelleme, silme, iade ve iptal çağrılarında atılır; sorgular bulunamayan kayıtta boş liste döner. `Item.image` http ya da https adres olabilir. Dönüş adresleri canlıda https ve internetten erişilebilir olmalıdır, sandbox'ta localhost dahil her adres kabul edilir. Bir istekte en çok 100 kalem gönderilir. Yalnızca token'la çağrılan `updatePaymentLink()` ve `updateBankAccount()` `ValidationError` döner.
+
+Kırıcı değişiklik:
+
+- `RefundStatus` kaldırıldı; geçit iade durumu döndürmediği için hiçbir yanıtta kullanılmıyordu.
 
 ## 1.0.5'teki değişiklikler
 
