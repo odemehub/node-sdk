@@ -252,6 +252,20 @@ export interface Item {
 }
 
 /**
+ * The most instalments the checkout page offers, apart for individual and
+ * commercial cards: 1 to 12 each, 1 for a single payment only, `null` (or
+ * left out) for no limit on that kind of card. A limit is always sent
+ * whole; sent on a change it takes the place of the one there was, and
+ * `{ individual: null, commercial: null }` lifts it.
+ */
+export interface MaxInstallments {
+    /** The most instalments on an individual card; `null` for no limit. */
+    individual?: number | null;
+    /** The most instalments on a commercial card; `null` for no limit. */
+    commercial?: number | null;
+}
+
+/**
  * An order or a subscription opened to be paid on the gateway's own page.
  * Nothing is charged here: the answer carries the address to send the
  * customer to. What it comes to is never sent: it is the lines added up,
@@ -301,6 +315,8 @@ export interface CheckoutMessage {
      * changes.
      */
     emailsCustomer?: boolean;
+    /** The most instalments the checkout page offers, for individual and commercial cards apart. Left out, the team's own installment settings hold. */
+    maxInstallments?: MaxInstallments;
 }
 
 /**
@@ -323,6 +339,8 @@ export interface UpdateCheckoutMessage {
     requiresShipping?: boolean | null;
     locksCustomer?: boolean | null;
     emailsCustomer?: boolean | null;
+    /** Takes the place of the limit there was; `{ individual: null, commercial: null }` lifts it. */
+    maxInstallments?: MaxInstallments;
 }
 
 /**
@@ -417,6 +435,8 @@ export interface CreatePaymentLink {
     currencies?: Currency[];
     /** Whether the payer is sent an e-mail, at the address they give on the checkout page, once their payment goes through. Left out, they are not. */
     emailsCustomer?: boolean;
+    /** The most instalments the checkout page offers, for individual and commercial cards apart. Left out, the team's own installment settings hold. */
+    maxInstallments?: MaxInstallments;
     /** The last day the link may be paid, as `YYYY-MM-DD` in the team's own time; today or later. Left out, it never runs out. */
     expiresAt?: string;
     /** Whether the link takes payments. Left out, it does. */
@@ -451,6 +471,8 @@ export interface UpdatePaymentLink {
     currencyType?: CurrencyType;
     currencies?: Currency[] | null;
     emailsCustomer?: boolean;
+    /** Takes the place of the limit there was; `{ individual: null, commercial: null }` lifts it. */
+    maxInstallments?: MaxInstallments;
     /** As `YYYY-MM-DD` in the team's own time; `null` lets it never run out. */
     expiresAt?: string | null;
     isActive?: boolean;

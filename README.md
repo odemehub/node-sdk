@@ -166,6 +166,7 @@ const created = await client.createOrder({
     requiresShipping: true,                   // ödeyen adresini ve gönderim yöntemini sayfada seçer
     cancelUrl: 'https://magazam.com/sepet',
     emailsCustomer: true,                     // ödeme tamamlanınca fatura adresindeki e-postaya bilgilendirme gider; varsayılan false
+    maxInstallments: { individual: 6, commercial: 1 }, // bireysel kartta en çok 6 taksit, ticari kartta tek çekim
 });
 
 res.redirect(created.order.checkoutUrl!);     // müşteriyi buraya gönderin
@@ -178,7 +179,9 @@ Bir istekte en az 1, en çok 100 kalem gönderilir (sipariş, abonelik ve linkte
 
 Referans tekil değildir: `createOrder()` her çağrıda yeni bir sipariş ve yeni bir token açar, aynı referans daha önce gönderilmiş olsa da. Var olan sipariş yeniden yazılmaz, tekrarlanan referans reddedilmez. Her yanıttaki `order.token`'ı saklayın; siparişi bundan sonra o adlandırır (`retrieveOrders({ token })`, `updateOrder({ token })`). Referansla sorgu o referanstaki bütün siparişleri getirir.
 
-Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `requiresShipping`, `locksCustomer`, `emailsCustomer`, `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `discount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
+**Taksit sınırı.** `maxInstallments` ödeme sayfasında sunulacak en yüksek taksit sayısını bireysel (`individual`) ve ticari (`commercial`) kart için ayrı ayrı sınırlar: her biri 1–12, `1` yalnızca tek çekim, `null` (ya da verilmezse) o kart tipinde sınır yok. Sipariş, abonelik ve ödeme linkinde (`create*` / `update*`) aynı şekilde gönderilir. Güncellemede gönderilen sınır öncekinin yerini alır, gönderilmezse değişmez; `{ individual: null, commercial: null }` sınırı kaldırır. Yanıttaki `maxInstallments` (`Response.MaxInstallments`; `Order`, `Subscription`, `PaymentLink`) sınır yoksa `null`'dır.
+
+Sipariş (`Response.Order`): `token`, `reference`, `description`, `paymentProviderToken`, `status` (`open` / `paid`), `requiresShipping`, `locksCustomer`, `emailsCustomer`, `maxInstallments`, `items[]`, `shippingMethod` (seçilen), `subtotal`, `shippingAmount`, `taxAmount`, `amount`, `discount`, `currency`, `isTest`, `createdAt`, `checkoutUrl` (ödenebilirken dolu), `transaction` (ödeyen işlem, açıkken `null`) ve `customer` (`reference`, `billingAddress`, `shippingAddress`).
 
 **Kupon.** API'de kupon alanı yoktur; ödeyen kodu ödeme sayfasında girer. Kupon kullanılan siparişte `discount` (`code`, `amount`) dolu gelir, kullanılmayanda `null`. Siparişin `subtotal`, `taxAmount` ve `amount` değerleri indirim düşülmüş hâlidir; kupon gönderim ücretinden düşülmez.
 
@@ -256,7 +259,7 @@ donation.paymentLink.currencies;              // ['TRY', 'USD', 'EUR']
 
 Güncellemede `null` gönderilen alan boşaltılır; `itemName`, `predefinedAmounts`, `taxRate` ve `currencies` de böyle boşaltılabilir. `reference: null` linke yeni bir `LINK{n}` referansı verir, `taxMode: null` `inclusive`'e döndürür; verilmeyen alan gövdeye yazılmaz ve değişmez. Yalnızca token'la (değiştirilecek alan olmadan) çağrılan `updatePaymentLink()` `ValidationError` döner. Tipin kullanmadığı alanları geçit kaydederken bırakır. Seçimli tipten `fixed`'e dönen (ya da `fixed`'de kalıp kalemi olmayan) link kalemlerini göndermek zorundadır.
 
-Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsCustomer`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
+Link (`Response.PaymentLink`): `token`, `reference`, `description`, `paymentProviderToken`, `amountType`, `itemName`, `predefinedAmounts`, `taxRate`, `taxMode`, `items[]`, `subtotal`, `taxAmount`, `amount` (son üçü seçimli tipte `null`), `currency`, `currencyType`, `currencies` (`fixed`'de `null`), `emailsCustomer`, `maxInstallments`, `isActive`, `isTest`, `expiresAt`, `checkoutUrl`, `createdAt`; sorguda ayrıca `transactions` ve `transactionsCount`.
 
 **Link ödemeleri.** Linkte yapılan her ödeme bir link ödemesidir (`LinkPayment`): ödeyen ödemeye başlayınca `LINKPAY{n}` referansıyla açılır, ödeme geçince `paid` olur. Link ödemesini ödeyen açar, siz yalnız sorarsınız:
 
@@ -608,6 +611,12 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 ## İstek sınırları
 
 Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Banka hareketleri uçları yalnızca genel sınıra girer. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.7'deki değişiklikler
+
+Eklenenler:
+
+- **Taksit sınırı:** sipariş, abonelik ve ödeme linki oluşturma/güncelleme isteklerinde `maxInstallments` (`{ individual, commercial }`); `Order`, `Subscription` ve `PaymentLink` yanıtlarında `maxInstallments` (`MaxInstallments` ya da `null`). Güncellemede `{ individual: null, commercial: null }` sınırı kaldırır.
 
 ## 1.0.6'daki değişiklikler
 

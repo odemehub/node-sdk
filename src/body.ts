@@ -41,6 +41,17 @@ function token(value: string): string {
     return encodeURIComponent(value);
 }
 
+/**
+ * An instalment limit, sent whole: a kind of card left without a limit
+ * goes as `null`, so a limit with both `null` lifts the one there was.
+ */
+function maxInstallments(limit: Request.MaxInstallments | undefined): Body | undefined {
+    return limit === undefined || limit === null ? undefined : {
+        individual: limit.individual ?? null,
+        commercial: limit.commercial ?? null,
+    };
+}
+
 function card(card: Request.Card): Body {
     return said({
         holder_name: card.holderName,
@@ -181,6 +192,7 @@ function checkout(message: Request.CheckoutMessage): Body {
         requires_shipping: message.requiresShipping,
         locks_customer: message.locksCustomer,
         emails_customer: message.emailsCustomer,
+        max_installments: maxInstallments(message.maxInstallments),
         items: message.items.map(item),
     });
 }
@@ -200,6 +212,7 @@ function checkoutChange(message: Request.UpdateCheckoutMessage): Body {
         requires_shipping: message.requiresShipping,
         locks_customer: message.locksCustomer,
         emails_customer: message.emailsCustomer,
+        max_installments: maxInstallments(message.maxInstallments),
         items: message.items?.map(item),
     });
 }
@@ -238,6 +251,7 @@ export function createPaymentLink(message: Request.CreatePaymentLink): Message {
             currency_type: message.currencyType,
             currencies: message.currencies,
             emails_customer: message.emailsCustomer,
+            max_installments: maxInstallments(message.maxInstallments),
             expires_at: message.expiresAt,
             is_active: message.isActive,
             items: message.items?.map(item),
@@ -265,6 +279,7 @@ export function updatePaymentLink(message: Request.UpdatePaymentLink): Message {
             currency_type: message.currencyType,
             currencies: message.currencies,
             emails_customer: message.emailsCustomer,
+            max_installments: maxInstallments(message.maxInstallments),
             expires_at: message.expiresAt,
             is_active: message.isActive,
             items: message.items?.map(item),

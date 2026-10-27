@@ -775,6 +775,38 @@ export class Discount {
 }
 
 /**
+ * The most instalments the checkout page offers, apart for individual and
+ * commercial cards: 1 for a single payment only, null for no limit on that
+ * kind of card.
+ */
+export class MaxInstallments {
+    /** The most instalments on an individual card; null for no limit. */
+    declare readonly individual: number | null;
+    /** The most instalments on a commercial card; null for no limit. */
+    declare readonly commercial: number | null;
+
+    constructor(fields: Fields<MaxInstallments>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(maxInstallments: Body): MaxInstallments {
+        return new MaxInstallments({
+            individual: optionalInteger(maxInstallments.individual),
+            commercial: optionalInteger(maxInstallments.commercial),
+        });
+    }
+}
+
+/**
+ * The instalment limit an answer carries, or null where it carries none.
+ */
+function maxInstallments(value: unknown): MaxInstallments | null {
+    const limit = optionalObject(value);
+
+    return limit === null ? null : MaxInstallments.fromBody(limit);
+}
+
+/**
  * An order as the gateway keeps it: what is being paid for, what it comes
  * to, where it stands, whose it is and — once it is paid — the payment that
  * paid it. The same shape comes back whether the order has just been
@@ -797,6 +829,8 @@ export class Order {
     declare readonly locksCustomer: boolean;
     /** Whether the customer is sent an e-mail at their billing address. */
     declare readonly emailsCustomer: boolean;
+    /** The most instalments the checkout page offers, for individual and commercial cards apart; null when no limit was set. */
+    declare readonly maxInstallments: MaxInstallments | null;
     declare readonly items: Item[];
     /** The way the payer picked; null until they have, or when none was offered. */
     declare readonly shippingMethod: ShippingMethod | null;
@@ -860,6 +894,7 @@ export class Order {
             requiresShipping: boolean(order.requires_shipping),
             locksCustomer: boolean(order.locks_customer),
             emailsCustomer: boolean(order.emails_customer),
+            maxInstallments: maxInstallments(order.max_installments),
             items: list(order.items).map((item) => Item.fromBody(object(item))),
             shippingMethod: shippingMethod === null ? null : ShippingMethod.fromBody(shippingMethod),
             subtotal: string(order.subtotal),
@@ -973,6 +1008,8 @@ export class PaymentLink {
     declare readonly currencies: Known<Currency>[] | null;
     /** Whether the payer is sent an e-mail, at the address they give on the checkout page, once their payment goes through. */
     declare readonly emailsCustomer: boolean;
+    /** The most instalments the checkout page offers, for individual and commercial cards apart; null when no limit was set. */
+    declare readonly maxInstallments: MaxInstallments | null;
     /** Whether it takes payments now: switched on, and its last day not gone by. */
     declare readonly isActive: boolean;
     /** Whether its payments are taken in the test environment now. */
@@ -1015,6 +1052,7 @@ export class PaymentLink {
             currencyType: string(link.currency_type),
             currencies: optionalStrings(link.currencies),
             emailsCustomer: boolean(link.emails_customer),
+            maxInstallments: maxInstallments(link.max_installments),
             isActive: boolean(link.is_active),
             isTest: boolean(link.is_test),
             expiresAt: said(link.expires_at),
@@ -1284,6 +1322,8 @@ export class Subscription {
     declare readonly locksCustomer: boolean;
     /** Whether the customer is sent an e-mail at their billing address. */
     declare readonly emailsCustomer: boolean;
+    /** The most instalments the checkout page offers, for individual and commercial cards apart; null when no limit was set. */
+    declare readonly maxInstallments: MaxInstallments | null;
     /** How often it renews: daily, weekly, monthly or annually. */
     declare readonly period: Known<Period>;
     /** How many renewals are paid in all; null for one that runs until it is called off. */
@@ -1391,6 +1431,7 @@ export class Subscription {
             requiresShipping: boolean(subscription.requires_shipping),
             locksCustomer: boolean(subscription.locks_customer),
             emailsCustomer: boolean(subscription.emails_customer),
+            maxInstallments: maxInstallments(subscription.max_installments),
             period: string(subscription.period),
             renewalLimit: optionalInteger(subscription.renewal_limit),
             renewalsPaid: integer(subscription.renewals_paid),
