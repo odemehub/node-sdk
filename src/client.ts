@@ -1,18 +1,8 @@
+import { SignedClient } from './base.js';
 import * as body from './body.js';
-import type { Body, Message } from './body.js';
-import {
-    AuthenticationError,
-    ForbiddenError,
-    NotFoundError,
-    RateLimitError,
-    SignatureError,
-    TransportError,
-    UnexpectedResponseError,
-    ValidationError,
-} from './errors.js';
+import { SignatureError } from './errors.js';
 import type * as Request from './request.js';
 import * as Response from './response.js';
-import { Signature } from './signature.js';
 
 /**
  * The address the gateway is reached at and the credentials it is reached
@@ -40,19 +30,9 @@ export interface Options {
  * There is one method per endpoint, named after it: `create-order` is
  * `createOrder()`, `retrieve-saved-cards` is `retrieveSavedCards()`.
  */
-export class Client {
-    /**
-     * The header the API key travels in.
-     */
-    static readonly API_KEY_HEADER = 'X-Api-Key';
-
-    private readonly signature: Signature;
-
-    private readonly fetch: typeof fetch;
-
+export class Client extends SignedClient {
     constructor(private readonly options: Options) {
-        this.signature = new Signature(options.apiSecret);
-        this.fetch = options.fetch ?? globalThis.fetch;
+        super(options);
     }
 
     /**
@@ -270,6 +250,108 @@ export class Client {
     }
 
     /**
+     * The providers a payment account may be added for, each with the
+     * settings it asks for. Like every method down to `createLogo()`, this
+     * only works on a team a partner opened; any other team gets a
+     * `ForbiddenError`.
+     */
+    async retrieveProviders(): Promise<Response.ProviderList> {
+        return Response.ProviderList.fromBody(await this.send(body.retrieveProviders()));
+    }
+
+    /**
+     * Add a payment account. The provider is not asked whether it takes the
+     * settings; the first payment through the account finds out.
+     */
+    async createPaymentProvider(paymentProvider: Request.CreatePaymentProvider): Promise<Response.PaymentProviderDetails> {
+        return Response.PaymentProviderDetails.fromBody(await this.send(body.createPaymentProvider(paymentProvider)));
+    }
+
+    /**
+     * Payment accounts as they stand — by token, or every account of the
+     * team's when none is named. Their settings are never shown.
+     */
+    async retrievePaymentProviders(paymentProviders: Request.RetrievePaymentProviders = {}): Promise<Response.PaymentProviderList> {
+        return Response.PaymentProviderList.fromBody(await this.send(body.retrievePaymentProviders(paymentProviders)));
+    }
+
+    /**
+     * Rename a payment account, replace its settings or make it the
+     * default. Only what is sent is written.
+     */
+    async updatePaymentProvider(paymentProvider: Request.UpdatePaymentProvider): Promise<Response.PaymentProviderDetails> {
+        return Response.PaymentProviderDetails.fromBody(await this.send(body.updatePaymentProvider(paymentProvider)));
+    }
+
+    /**
+     * Remove a payment account.
+     */
+    async deletePaymentProvider(paymentProvider: Request.DeletePaymentProvider): Promise<Response.DeletedPaymentProvider> {
+        return Response.DeletedPaymentProvider.fromBody(await this.send(body.deletePaymentProvider(paymentProvider)));
+    }
+
+    /**
+     * Put down an address the gateway posts the team's webhooks to.
+     */
+    async createWebhookEndpoint(webhookEndpoint: Request.CreateWebhookEndpoint): Promise<Response.WebhookEndpointDetails> {
+        return Response.WebhookEndpointDetails.fromBody(await this.send(body.createWebhookEndpoint(webhookEndpoint)));
+    }
+
+    /**
+     * Webhook addresses as they stand — by token, or every address of the
+     * team's when none is named.
+     */
+    async retrieveWebhookEndpoints(webhookEndpoints: Request.RetrieveWebhookEndpoints = {}): Promise<Response.WebhookEndpointList> {
+        return Response.WebhookEndpointList.fromBody(await this.send(body.retrieveWebhookEndpoints(webhookEndpoints)));
+    }
+
+    /**
+     * Change a webhook address, its events, or switch it on or off. Only
+     * what is sent is written.
+     */
+    async updateWebhookEndpoint(webhookEndpoint: Request.UpdateWebhookEndpoint): Promise<Response.WebhookEndpointDetails> {
+        return Response.WebhookEndpointDetails.fromBody(await this.send(body.updateWebhookEndpoint(webhookEndpoint)));
+    }
+
+    /**
+     * Take a webhook address away.
+     */
+    async deleteWebhookEndpoint(webhookEndpoint: Request.DeleteWebhookEndpoint): Promise<Response.DeletedWebhookEndpoint> {
+        return Response.DeletedWebhookEndpoint.fromBody(await this.send(body.deleteWebhookEndpoint(webhookEndpoint)));
+    }
+
+    /**
+     * Rename the team, or give it another clock. Only what is sent is
+     * written.
+     */
+    async updateTeam(team: Request.UpdateTeam): Promise<Response.TeamDetails> {
+        return Response.TeamDetails.fromBody(await this.send(body.updateTeam(team)));
+    }
+
+    /**
+     * How the team's checkout page is dressed.
+     */
+    async retrieveCheckoutDesign(): Promise<Response.CheckoutDesignDetails> {
+        return Response.CheckoutDesignDetails.fromBody(await this.send(body.retrieveCheckoutDesign()));
+    }
+
+    /**
+     * Change how the team's checkout page is dressed. Only what is sent is
+     * written; every payer sees it from the next page they open.
+     */
+    async updateCheckoutDesign(checkoutDesign: Request.UpdateCheckoutDesign): Promise<Response.CheckoutDesignDetails> {
+        return Response.CheckoutDesignDetails.fromBody(await this.send(body.updateCheckoutDesign(checkoutDesign)));
+    }
+
+    /**
+     * Keep a logo for the team. The address that comes back is what
+     * `updateCheckoutDesign()` names it by.
+     */
+    async createLogo(logo: Request.CreateLogo): Promise<Response.LogoDetails> {
+        return Response.LogoDetails.fromBody(await this.send(body.createLogo(logo)));
+    }
+
+    /**
      * Read a word the gateway posted to one of the merchant's webhook
      * addresses. Hand it the request exactly as it arrived — the method,
      * the path of the address it came to (without the query string), the
@@ -308,153 +390,10 @@ export class Client {
     }
 
     /**
-     * Sign what is being asked for, hand it to the gateway and read the
-     * answer back. The body is signed exactly as it is sent, character for
-     * character, so it is written once and used for both.
-     */
-    private async send(message: Message): Promise<Body> {
-        const path = this.path(message.path);
-        const payload = JSON.stringify(message.body);
-        const headers: Record<string, string> = {
-            [Client.API_KEY_HEADER]: this.options.apiKey,
-            ...this.signature.headers('POST', path, payload),
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-        };
-
-        let response: globalThis.Response;
-        let text: string;
-
-        try {
-            response = await this.fetch(this.url(path), {
-                method: 'POST',
-                headers,
-                body: payload,
-                signal: AbortSignal.timeout(this.options.timeout ?? 60_000),
-            });
-            text = await response.text();
-        } catch (error) {
-            throw new TransportError(`Ödeme geçidine ulaşılamadı: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
-        }
-
-        return this.read(response, text, 'POST', path);
-    }
-
-    /**
      * The path of a gateway endpoint for this team, as it is signed: with
      * its leading slash and nothing in front of it.
      */
-    private path(endpoint: string): string {
+    protected path(endpoint: string): string {
         return `/api/${this.options.team}/gateway/${endpoint}`;
     }
-
-    /**
-     * The full address of a gateway path.
-     */
-    private url(path: string): string {
-        return `${this.options.baseUrl.replace(/\/+$/, '')}${path}`;
-    }
-
-    /**
-     * Read the answer. An outcome is answered with 200 and signed, however
-     * the payment itself turned out: a payment the provider declined is an
-     * outcome like any other and comes back rather than being raised. The
-     * signature is checked over the method and path of the request and the
-     * answer's own moment and body.
-     *
-     * Anything else is a refusal — the request never became a payment — and
-     * the status says which kind. The gateway signs some of those too, but a
-     * signature does not make a refusal an outcome, so the status is read
-     * first.
-     */
-    private read(response: globalThis.Response, payload: string, method: string, path: string): Body {
-        const status = response.status;
-
-        if (status === 200) {
-            const verified = this.signature.verifyMessage(
-                method,
-                path,
-                payload,
-                response.headers.get(Signature.TIMESTAMP_HEADER),
-                response.headers.get(Signature.HEADER),
-            );
-
-            if (!verified) {
-                throw new SignatureError('Yanıtın imzası doğrulanamadı; yanıt ödeme geçidinden gelmemiş olabilir.');
-            }
-
-            return this.decode(payload, status);
-        }
-
-        const [message, errors] = this.refusal(payload);
-
-        switch (status) {
-            case 401:
-                throw new AuthenticationError(message);
-            case 403:
-                throw new ForbiddenError(message);
-            case 404:
-                throw new NotFoundError(message);
-            case 422:
-                throw new ValidationError(message, errors);
-            case 429:
-                throw new RateLimitError(message, retryAfter(response.headers.get('Retry-After')));
-            default:
-                throw new UnexpectedResponseError(message, status);
-        }
-    }
-
-    /**
-     * What a refusal says. The gateway answers in the one shape it answers
-     * everything in, so what went wrong and which fields it is about are
-     * found under `result`.
-     */
-    private refusal(payload: string): [string, Record<string, string[]>] {
-        const body = this.parse(payload);
-        const result = isObject(body?.result) ? body.result : {};
-
-        const message = typeof result.message === 'string'
-            ? result.message
-            : typeof body?.message === 'string' ? body.message : 'Ödeme geçidi isteği reddetti.';
-
-        const errors = isObject(result.errors)
-            ? result.errors
-            : isObject(body?.errors) ? body.errors : {};
-
-        return [message, errors as Record<string, string[]>];
-    }
-
-    /**
-     * Read a body the signature has already vouched for.
-     */
-    private decode(payload: string, status: number): Body {
-        const body = this.parse(payload);
-
-        if (body === null) {
-            throw new UnexpectedResponseError(`Ödeme geçidi ${status} durumuyla okunamayan bir yanıt döndü.`, status);
-        }
-
-        return body;
-    }
-
-    private parse(payload: string): Body | null {
-        try {
-            const body: unknown = JSON.parse(payload);
-
-            return isObject(body) ? body : null;
-        } catch {
-            return null;
-        }
-    }
-}
-
-function isObject(value: unknown): value is Body {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
- * How long the gateway asked to wait before trying again, in seconds.
- */
-function retryAfter(value: string | null): number | null {
-    return value !== null && /^[0-9]+$/.test(value) ? Number(value) : null;
 }

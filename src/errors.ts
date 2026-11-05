@@ -20,7 +20,9 @@ export class AuthenticationError extends OdemehubError {}
  * The credentials were accepted, but the team may not do this: it cannot
  * take payments for now (an unpaid balance), or the module the endpoint
  * belongs to is off for it. ödemehub turns modules on; get in touch to have
- * one opened.
+ * one opened. The endpoints that run a team's payment accounts, webhook
+ * addresses and checkout design only work on a team a partner opened, and
+ * the sandbox does not switch modules (`updateTeamModules()`).
  */
 export class ForbiddenError extends OdemehubError {}
 
@@ -53,7 +55,8 @@ export class UnexpectedResponseError extends OdemehubError {
 
 /**
  * The record a change names by its token — an update, a delete, a refund
- * or a cancel — is not one of the team's. Asking after records never
+ * or a cancel — is not one of the team's; or, on the partner API, the
+ * team a slug names is not one the partner opened. Asking after records never
  * raises this: a token, a reference or days that match nothing answer
  * with an empty list.
  */

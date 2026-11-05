@@ -1,5 +1,7 @@
 export { Client } from './client.js';
 export type { Options } from './client.js';
+export { PartnerClient } from './partner.js';
+export type { PartnerOptions } from './partner.js';
 export { Signature } from './signature.js';
 export {
     AuthenticationError,

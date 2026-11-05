@@ -8,7 +8,7 @@
  * answers a refusal with `ValidationError`, field by field.
  */
 
-import type { AmountType, Currency, CurrencyType, Period, SubscriptionStatus, TaxMode } from './enums.js';
+import type { AmountType, Currency, CurrencyType, Known, Period, SubscriptionStatus, TaxMode, WebhookEvent } from './enums.js';
 
 export type { AmountType, Currency, CurrencyType, Period, TaxMode } from './enums.js';
 
@@ -663,3 +663,230 @@ export interface RetrieveBankTransactions {
     /** How many movements a page holds, at most 250. Left out, 50 when `page` is sent and 250 when it is not. */
     perPage?: number;
 }
+
+/**
+ * A payment account added to a partner's team, for one of the providers
+ * `retrieveProviders()` lists. Whether the provider takes the settings is
+ * not asked here, the way the panel does not ask until told to; a payment
+ * made through the account is what finds out. An added account is named
+ * by the token the gateway gives it from then on, which a payment names
+ * it by as `paymentProviderToken`.
+ */
+export interface CreatePaymentProvider {
+    /** The provider's id, as `retrieveProviders()` lists it, e.g. `iyzico`. */
+    provider: string;
+    /** What the account is called in the panel and the listing. */
+    name: string;
+    /**
+     * The provider's settings, keyed the way `retrieveProviders()` lists
+     * them: every one twice, the test one behind a `test_` prefix. Only the
+     * ones for the environment the team works in have to be given.
+     */
+    settings?: Record<string, string>;
+}
+
+/**
+ * Something asked of or done to a payment account, named by the token the
+ * gateway gave it.
+ */
+export interface PaymentProviderMessage {
+    /** The account's token in the gateway. */
+    token: string;
+}
+
+/**
+ * A change to a payment account: its name, the settings given, the rest
+ * staying as they are, or making it the one payments go through by
+ * default. Its provider does not change.
+ */
+export interface UpdatePaymentProvider extends PaymentProviderMessage {
+    name?: string;
+    /** Only the settings to replace, keyed the way `retrieveProviders()` lists them. */
+    settings?: Record<string, string>;
+    /**
+     * `true` makes the account the default, the one before it giving way.
+     * An account is only ever made the default, never unmade: make another
+     * one the default instead. Left out, it stays as it is.
+     */
+    isDefault?: boolean;
+}
+
+/**
+ * Removing a payment account. One a Gate rule still sends payments to is
+ * not removed, and the answer is a `ValidationError`.
+ */
+export type DeletePaymentProvider = PaymentProviderMessage;
+
+/**
+ * Payment accounts asked after: the ones whose tokens are given, or every
+ * account of the team's when none is. A token that is not the team's
+ * finds nothing.
+ */
+export interface RetrievePaymentProviders {
+    /** The accounts' tokens, at most fifty; left out, every account. */
+    tokens?: string[];
+}
+
+/**
+ * An address on a partner's team the gateway posts its webhooks to, for
+ * the events picked. What is posted there is signed with the team's own
+ * secret, as every webhook is.
+ */
+export interface CreateWebhookEndpoint {
+    /** An http or https address reachable from the internet. An address is put down once per team. */
+    url: string;
+    /** The events posted to it, at least one; only those about a module the team uses. */
+    events: Known<WebhookEvent>[];
+    /** Whether webhooks go to it. Left out, they do. */
+    isActive?: boolean;
+}
+
+/**
+ * Something asked of or done to a webhook address, named by the token the
+ * gateway gave it.
+ */
+export interface WebhookEndpointMessage {
+    /** The address's token in the gateway. */
+    token: string;
+}
+
+/**
+ * A change to a webhook address. Only what is sent is written; events sent
+ * replace every event there was.
+ */
+export interface UpdateWebhookEndpoint extends WebhookEndpointMessage {
+    url?: string;
+    events?: Known<WebhookEvent>[];
+    /** `false` stops webhooks going to it without taking it away. */
+    isActive?: boolean;
+}
+
+/**
+ * Taking a webhook address away.
+ */
+export type DeleteWebhookEndpoint = WebhookEndpointMessage;
+
+/**
+ * Webhook addresses asked after: the ones whose tokens are given, or every
+ * address of the team's when none is.
+ */
+export interface RetrieveWebhookEndpoints {
+    /** The addresses' tokens, at most fifty; left out, every address. */
+    tokens?: string[];
+}
+
+/**
+ * A change to a partner's team itself. Only what is sent is written.
+ */
+export interface UpdateTeam {
+    /** What the team is called. */
+    name?: string;
+    /** The team's clock, as an IANA name, e.g. `Europe/Istanbul`; days asked about are read in it. */
+    timezone?: string;
+}
+
+/**
+ * A change to how a partner's team's checkout page is dressed. Only what
+ * is sent is written, and every payer sees it from the next page they open.
+ * `logo` and `termsUrl` may be set to `null`, to take them away.
+ */
+export interface UpdateCheckoutDesign {
+    /** The address `createLogo()` answered with; `null` takes the logo away. */
+    logo?: string | null;
+    /** `standard` or `card`. */
+    layout?: string;
+    /** Whether the summary and the form swap sides. */
+    isReversed?: boolean;
+    /** The summary's colour, as `#rrggbb`. */
+    summaryColor?: string;
+    /** The buttons' and links' colour, as `#rrggbb`. */
+    accentColor?: string;
+    /** `default`, or one of the gateway's fonts, e.g. `inter`, `roboto`, `open_sans`. */
+    font?: string;
+    /** The corners: `rounded`, `rectangular` or `pill`. */
+    formStyle?: string;
+    /** Whether the page takes a coupon code. */
+    takesCoupons?: boolean;
+    /** Whether the payer picks one of the team's shipping methods. */
+    offersShippingMethods?: boolean;
+    /** What the pay button says: `auto`, `pay`, `book`, `donate` or `subscribe`. */
+    submitType?: string;
+    /** How the ways of paying are shown: `list` or `tabs`. */
+    paymentMethodStyle?: string;
+    /** Whether the payer has to accept the terms; the address has to be sent with it or already kept. */
+    requiresTerms?: boolean;
+    /** The terms' http or https address; `null` takes it away. */
+    termsUrl?: string | null;
+    /** Whether the payer may be billed as a company. */
+    takesCompany?: boolean;
+}
+
+/**
+ * A logo kept for a partner's team, for its checkout design to name by the
+ * address the answer carries. JPG, PNG or WEBP, at most 2 MB and 3000
+ * pixels a side.
+ */
+export interface CreateLogo {
+    /**
+     * The picture: its bytes, which are written as base64 on the way, or
+     * base64 text already, with or without a `data:image/png;base64,` head.
+     */
+    content: string | Uint8Array;
+}
+
+/**
+ * A team opened by a partner, with its credentials, free. Anything left
+ * out takes its default, the way a team opened in the panel does. A
+ * partner that has opened as many teams as it may is turned down with a
+ * `ValidationError` on `team`.
+ */
+export interface CreateTeam {
+    /** What the team is called. */
+    name?: string;
+    /** The team's clock, as an IANA name, e.g. `Europe/Istanbul`. */
+    timezone?: string;
+    /**
+     * The modules it uses: `api`, `orders`, `subscription`,
+     * `payment_links`, `saved_cards`, `bank_transactions`. The sandbox
+     * opens every module and leaves this unread.
+     */
+    modules?: string[];
+}
+
+/**
+ * The partner's teams asked after: the ones whose slugs are given, or
+ * every team it opened, a page at a time when one is asked for.
+ */
+export interface RetrieveTeams {
+    /** The teams' slugs, the ten-digit numbers their gateway addresses carry; at most 250. */
+    slugs?: string[];
+    /** The page, from 1. Left out, the first. */
+    page?: number;
+    /** How many teams a page holds, at most 250. Left out, 50 when `page` is sent and 250 when it is not. */
+    perPage?: number;
+}
+
+/**
+ * Something done to one of the partner's teams, named by its slug.
+ */
+export interface TeamMessage {
+    /** The team's slug: the ten-digit number its gateway address carries. */
+    slug: string;
+}
+
+/**
+ * The modules a partner's team is left with: exactly the ones sent, an
+ * empty list switching every one off. `custom_domain` and `shopify_pos`
+ * are ödemehub's to switch; sent, they are turned down, and where the team
+ * has them they stay as they are. The sandbox turns this down: every
+ * module is open there.
+ */
+export interface UpdateTeamModules extends TeamMessage {
+    modules: string[];
+}
+
+/**
+ * Deleting one of the partner's teams for good, with everything in it.
+ * Its credentials stop working at once.
+ */
+export type DeleteTeam = TeamMessage;

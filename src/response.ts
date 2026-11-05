@@ -1934,3 +1934,496 @@ export class BankTransactionList {
         });
     }
 }
+
+/**
+ * One setting a provider asks for before an account for it can take
+ * payments.
+ */
+export class ProviderField {
+    /** The name it is sent under in `settings`, e.g. api_key; the test one goes as `test_` and this. */
+    declare readonly key: string;
+    declare readonly required: boolean;
+    /** `text`, or `select` for one of `options`. */
+    declare readonly type: string;
+    /** What it is called on the provider's side, for a person to read. */
+    declare readonly label: string;
+    /** For a `select`, the values it takes, each with what it is called; null for anything else. */
+    declare readonly options: Record<string, string> | null;
+
+    constructor(fields: Fields<ProviderField>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(field: Body): ProviderField {
+        const options = optionalObject(field.options);
+
+        return new ProviderField({
+            key: string(field.key),
+            required: boolean(field.required),
+            type: string(field.type),
+            label: string(field.label),
+            options: options === null ? null : Object.fromEntries(Object.entries(options).map(([value, label]) => [value, string(label)])),
+        });
+    }
+}
+
+/**
+ * A provider a payment account may be added for, with the settings it
+ * asks for.
+ */
+export class Provider {
+    /** The provider's id, sent as `provider` when an account for it is added, e.g. iyzico. */
+    declare readonly id: string;
+    declare readonly title: string;
+    /** Whether it is a way of paying other than a card form, e.g. a wallet. */
+    declare readonly isAlternative: boolean;
+    declare readonly fields: ProviderField[];
+
+    constructor(fields: Fields<Provider>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(provider: Body): Provider {
+        return new Provider({
+            id: string(provider.id),
+            title: string(provider.title),
+            isAlternative: boolean(provider.is_alternative),
+            fields: list(provider.fields).map((field) => ProviderField.fromBody(object(field))),
+        });
+    }
+}
+
+/**
+ * The providers a payment account may be added for.
+ */
+export class ProviderList {
+    declare readonly result: Result;
+    declare readonly providers: Provider[];
+
+    constructor(fields: Fields<ProviderList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): ProviderList {
+        return new ProviderList({
+            result: Result.fromBody(body),
+            providers: list(body.providers).map((entry) => Provider.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * A payment account of the team's. Its settings hold its secrets and are
+ * never shown.
+ */
+export class PaymentProvider {
+    /** The account's token in the gateway, which a payment names it by as `paymentProviderToken`. */
+    declare readonly token: string;
+    declare readonly name: string;
+    /** The provider it is for, e.g. iyzico. */
+    declare readonly provider: string;
+    /** Whether payments go through it when no account is named and no Gate rule picks one. */
+    declare readonly isDefault: boolean;
+    declare readonly createdAt: string | null;
+
+    constructor(fields: Fields<PaymentProvider>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(paymentProvider: Body): PaymentProvider {
+        return new PaymentProvider({
+            token: string(paymentProvider.token),
+            name: string(paymentProvider.name),
+            provider: string(paymentProvider.provider),
+            isDefault: boolean(paymentProvider.is_default),
+            createdAt: said(paymentProvider.created_at),
+        });
+    }
+}
+
+/**
+ * The answer about one payment account: added or changed.
+ */
+export class PaymentProviderDetails {
+    declare readonly result: Result;
+    /** The account as it now stands. */
+    declare readonly paymentProvider: PaymentProvider;
+
+    constructor(fields: Fields<PaymentProviderDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): PaymentProviderDetails {
+        return new PaymentProviderDetails({
+            result: Result.fromBody(body),
+            paymentProvider: PaymentProvider.fromBody(object(body.payment_provider)),
+        });
+    }
+}
+
+/**
+ * Payment accounts asked after. The answer is always a list, and an empty
+ * one when nothing matched.
+ */
+export class PaymentProviderList {
+    declare readonly result: Result;
+    declare readonly paymentProviders: PaymentProvider[];
+
+    constructor(fields: Fields<PaymentProviderList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): PaymentProviderList {
+        return new PaymentProviderList({
+            result: Result.fromBody(body),
+            paymentProviders: list(body.payment_providers).map((entry) => PaymentProvider.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * A payment account removed.
+ */
+export class DeletedPaymentProvider {
+    declare readonly result: Result;
+    /** The token of the account removed. */
+    declare readonly paymentProviderToken: string;
+
+    constructor(fields: Fields<DeletedPaymentProvider>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): DeletedPaymentProvider {
+        return new DeletedPaymentProvider({
+            result: Result.fromBody(body),
+            paymentProviderToken: string(object(body.payment_provider).token),
+        });
+    }
+}
+
+/**
+ * An address the gateway posts the team's webhooks to.
+ */
+export class WebhookEndpoint {
+    /** The address's token in the gateway; null for one put down in the panel before addresses had tokens. */
+    declare readonly token: string | null;
+    declare readonly url: string;
+    /** The events posted to it. */
+    declare readonly events: Known<WebhookEvent>[];
+    /** Whether webhooks go to it. */
+    declare readonly isActive: boolean;
+    declare readonly createdAt: string | null;
+
+    constructor(fields: Fields<WebhookEndpoint>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(webhookEndpoint: Body): WebhookEndpoint {
+        return new WebhookEndpoint({
+            token: said(webhookEndpoint.token),
+            url: string(webhookEndpoint.url),
+            events: list(webhookEndpoint.events).map(string),
+            isActive: boolean(webhookEndpoint.is_active),
+            createdAt: said(webhookEndpoint.created_at),
+        });
+    }
+}
+
+/**
+ * The answer about one webhook address: put down or changed.
+ */
+export class WebhookEndpointDetails {
+    declare readonly result: Result;
+    /** The address as it now stands. */
+    declare readonly webhookEndpoint: WebhookEndpoint;
+
+    constructor(fields: Fields<WebhookEndpointDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): WebhookEndpointDetails {
+        return new WebhookEndpointDetails({
+            result: Result.fromBody(body),
+            webhookEndpoint: WebhookEndpoint.fromBody(object(body.webhook_endpoint)),
+        });
+    }
+}
+
+/**
+ * Webhook addresses asked after. The answer is always a list, and an empty
+ * one when nothing matched.
+ */
+export class WebhookEndpointList {
+    declare readonly result: Result;
+    declare readonly webhookEndpoints: WebhookEndpoint[];
+
+    constructor(fields: Fields<WebhookEndpointList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): WebhookEndpointList {
+        return new WebhookEndpointList({
+            result: Result.fromBody(body),
+            webhookEndpoints: list(body.webhook_endpoints).map((entry) => WebhookEndpoint.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * A webhook address taken away.
+ */
+export class DeletedWebhookEndpoint {
+    declare readonly result: Result;
+    /** The token of the address taken away. */
+    declare readonly webhookEndpointToken: string;
+
+    constructor(fields: Fields<DeletedWebhookEndpoint>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): DeletedWebhookEndpoint {
+        return new DeletedWebhookEndpoint({
+            result: Result.fromBody(body),
+            webhookEndpointToken: string(object(body.webhook_endpoint).token),
+        });
+    }
+}
+
+/**
+ * The team itself, as its own gateway tells of it.
+ */
+export class Team {
+    /** The team's slug: the ten-digit number its gateway address carries. */
+    declare readonly slug: string;
+    declare readonly name: string;
+    /** The team's clock, as an IANA name, e.g. Europe/Istanbul. */
+    declare readonly timezone: string;
+
+    constructor(fields: Fields<Team>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(team: Body): Team {
+        return new Team({
+            slug: string(team.slug),
+            name: string(team.name),
+            timezone: string(team.timezone),
+        });
+    }
+}
+
+/**
+ * The answer about the team once it is changed.
+ */
+export class TeamDetails {
+    declare readonly result: Result;
+    declare readonly team: Team;
+
+    constructor(fields: Fields<TeamDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): TeamDetails {
+        return new TeamDetails({
+            result: Result.fromBody(body),
+            team: Team.fromBody(object(body.team)),
+        });
+    }
+}
+
+/**
+ * How the team's checkout page is dressed. The values the gateway picks
+ * from are read as the plain strings they are.
+ */
+export class CheckoutDesign {
+    /** The logo's address; null when there is none. */
+    declare readonly logo: string | null;
+    /** `standard` or `card`. */
+    declare readonly layout: string;
+    declare readonly isReversed: boolean;
+    /** As `#rrggbb`. */
+    declare readonly summaryColor: string;
+    /** As `#rrggbb`. */
+    declare readonly accentColor: string;
+    /** `default`, or one of the gateway's fonts, e.g. inter. */
+    declare readonly font: string;
+    /** `rounded`, `rectangular` or `pill`. */
+    declare readonly formStyle: string;
+    declare readonly takesCoupons: boolean;
+    declare readonly offersShippingMethods: boolean;
+    /** `auto`, `pay`, `book`, `donate` or `subscribe`. */
+    declare readonly submitType: string;
+    /** `list` or `tabs`. */
+    declare readonly paymentMethodStyle: string;
+    declare readonly requiresTerms: boolean;
+    /** The terms' address; null when there is none. */
+    declare readonly termsUrl: string | null;
+    declare readonly takesCompany: boolean;
+
+    constructor(fields: Fields<CheckoutDesign>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(checkoutDesign: Body): CheckoutDesign {
+        return new CheckoutDesign({
+            logo: said(checkoutDesign.logo),
+            layout: string(checkoutDesign.layout),
+            isReversed: boolean(checkoutDesign.is_reversed),
+            summaryColor: string(checkoutDesign.summary_color),
+            accentColor: string(checkoutDesign.accent_color),
+            font: string(checkoutDesign.font),
+            formStyle: string(checkoutDesign.form_style),
+            takesCoupons: boolean(checkoutDesign.takes_coupons),
+            offersShippingMethods: boolean(checkoutDesign.offers_shipping_methods),
+            submitType: string(checkoutDesign.submit_type),
+            paymentMethodStyle: string(checkoutDesign.payment_method_style),
+            requiresTerms: boolean(checkoutDesign.requires_terms),
+            termsUrl: said(checkoutDesign.terms_url),
+            takesCompany: boolean(checkoutDesign.takes_company),
+        });
+    }
+}
+
+/**
+ * The answer about the team's checkout design: asked after or changed.
+ */
+export class CheckoutDesignDetails {
+    declare readonly result: Result;
+    declare readonly checkoutDesign: CheckoutDesign;
+
+    constructor(fields: Fields<CheckoutDesignDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): CheckoutDesignDetails {
+        return new CheckoutDesignDetails({
+            result: Result.fromBody(body),
+            checkoutDesign: CheckoutDesign.fromBody(object(body.checkout_design)),
+        });
+    }
+}
+
+/**
+ * A logo kept for the team.
+ */
+export class LogoDetails {
+    declare readonly result: Result;
+    /** Where it is kept: send it as `logo` in `updateCheckoutDesign()`. */
+    declare readonly url: string;
+
+    constructor(fields: Fields<LogoDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): LogoDetails {
+        return new LogoDetails({
+            result: Result.fromBody(body),
+            url: string(object(body.logo).url),
+        });
+    }
+}
+
+/**
+ * A team a partner opened, with everything its app needs to reach the
+ * team's own gateway: the address, whether payments there are test ones,
+ * and the team's credentials.
+ */
+export class PartnerTeam {
+    /** The team's slug: the ten-digit number its gateway address carries, and `team` for its `Client`. */
+    declare readonly slug: string;
+    declare readonly name: string;
+    /** The team's clock, as an IANA name, e.g. Europe/Istanbul. */
+    declare readonly timezone: string;
+    /** Whether payments on it are test ones. */
+    declare readonly isTest: boolean;
+    /** The modules it uses, e.g. orders, bank_transactions. */
+    declare readonly modules: string[];
+    /** The team's gateway address, e.g. https://app.odemehub.com/api/1000000001/gateway. */
+    declare readonly gatewayUrl: string;
+    /** The team's own API key, for its `Client`. */
+    declare readonly apiKey: string;
+    /** The team's own secret, for its `Client`. Keep it as safe as the partner's own. */
+    declare readonly apiSecret: string;
+    declare readonly createdAt: string | null;
+
+    constructor(fields: Fields<PartnerTeam>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(team: Body): PartnerTeam {
+        return new PartnerTeam({
+            slug: string(team.slug),
+            name: string(team.name),
+            timezone: string(team.timezone),
+            isTest: boolean(team.is_test),
+            modules: list(team.modules).map(string),
+            gatewayUrl: string(team.gateway_url),
+            apiKey: string(team.api_key),
+            apiSecret: string(team.api_secret),
+            createdAt: said(team.created_at),
+        });
+    }
+}
+
+/**
+ * The answer about one of the partner's teams: opened, or its modules
+ * switched.
+ */
+export class PartnerTeamDetails {
+    declare readonly result: Result;
+    declare readonly team: PartnerTeam;
+
+    constructor(fields: Fields<PartnerTeamDetails>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): PartnerTeamDetails {
+        return new PartnerTeamDetails({
+            result: Result.fromBody(body),
+            team: PartnerTeam.fromBody(object(body.team)),
+        });
+    }
+}
+
+/**
+ * The partner's teams asked after, a page at a time; an empty page when
+ * nothing matched.
+ */
+export class PartnerTeamList {
+    declare readonly result: Result;
+    /** Where the page stands. The gateway always sends it; null only if an answer ever comes without it. */
+    declare readonly pagination: Pagination | null;
+    declare readonly teams: PartnerTeam[];
+
+    constructor(fields: Fields<PartnerTeamList>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): PartnerTeamList {
+        return new PartnerTeamList({
+            result: Result.fromBody(body),
+            pagination: optionalObject(body.pagination) === null ? null : Pagination.fromBody(object(body.pagination)),
+            teams: list(body.teams).map((entry) => PartnerTeam.fromBody(object(entry))),
+        });
+    }
+}
+
+/**
+ * One of the partner's teams deleted, with everything in it.
+ */
+export class DeletedTeam {
+    declare readonly result: Result;
+    /** The slug of the team deleted. */
+    declare readonly slug: string;
+
+    constructor(fields: Fields<DeletedTeam>) {
+        Object.assign(this, fields);
+    }
+
+    static fromBody(body: Body): DeletedTeam {
+        return new DeletedTeam({
+            result: Result.fromBody(body),
+            slug: string(object(body.team).slug),
+        });
+    }
+}

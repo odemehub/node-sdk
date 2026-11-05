@@ -6,8 +6,9 @@ import type * as Request from './request.js';
 export type Body = Record<string, unknown>;
 
 /**
- * An endpoint under the team's gateway and the body posted to it. Every
- * endpoint is reached with POST.
+ * An endpoint — under the team's gateway, or under the partner's own
+ * address — and the body posted to it. Every endpoint is reached with
+ * POST.
  */
 export interface Message {
     path: string;
@@ -389,4 +390,141 @@ export function retrieveBankTransactions(message: Request.RetrieveBankTransactio
         page: message.page,
         per_page: message.perPage,
     }));
+}
+
+export function retrieveProviders(): Message {
+    return post('retrieve-providers', {});
+}
+
+export function createPaymentProvider(message: Request.CreatePaymentProvider): Message {
+    return post('create-payment-provider', {
+        payment_provider: said({
+            provider: message.provider,
+            name: message.name,
+            settings: message.settings,
+        }),
+    });
+}
+
+export function retrievePaymentProviders(message: Request.RetrievePaymentProviders): Message {
+    return post('retrieve-payment-providers', said({ tokens: message.tokens }));
+}
+
+export function updatePaymentProvider(message: Request.UpdatePaymentProvider): Message {
+    return post(`update-payment-provider/${token(message.token)}`, {
+        token: message.token,
+        payment_provider: said({
+            name: message.name,
+            settings: message.settings,
+            is_default: message.isDefault,
+        }),
+    });
+}
+
+export function deletePaymentProvider(message: Request.DeletePaymentProvider): Message {
+    return post(`delete-payment-provider/${token(message.token)}`, { token: message.token });
+}
+
+export function createWebhookEndpoint(message: Request.CreateWebhookEndpoint): Message {
+    return post('create-webhook-endpoint', {
+        webhook_endpoint: said({
+            url: message.url,
+            events: message.events,
+            is_active: message.isActive,
+        }),
+    });
+}
+
+export function retrieveWebhookEndpoints(message: Request.RetrieveWebhookEndpoints): Message {
+    return post('retrieve-webhook-endpoints', said({ tokens: message.tokens }));
+}
+
+export function updateWebhookEndpoint(message: Request.UpdateWebhookEndpoint): Message {
+    return post(`update-webhook-endpoint/${token(message.token)}`, {
+        token: message.token,
+        webhook_endpoint: said({
+            url: message.url,
+            events: message.events,
+            is_active: message.isActive,
+        }),
+    });
+}
+
+export function deleteWebhookEndpoint(message: Request.DeleteWebhookEndpoint): Message {
+    return post(`delete-webhook-endpoint/${token(message.token)}`, { token: message.token });
+}
+
+export function updateTeam(message: Request.UpdateTeam): Message {
+    return post('update-team', {
+        team: said({
+            name: message.name,
+            timezone: message.timezone,
+        }),
+    });
+}
+
+export function retrieveCheckoutDesign(): Message {
+    return post('retrieve-checkout-design', {});
+}
+
+export function updateCheckoutDesign(message: Request.UpdateCheckoutDesign): Message {
+    return post('update-checkout-design', {
+        checkout_design: given({
+            logo: message.logo,
+            layout: message.layout,
+            is_reversed: message.isReversed,
+            summary_color: message.summaryColor,
+            accent_color: message.accentColor,
+            font: message.font,
+            form_style: message.formStyle,
+            takes_coupons: message.takesCoupons,
+            offers_shipping_methods: message.offersShippingMethods,
+            submit_type: message.submitType,
+            payment_method_style: message.paymentMethodStyle,
+            requires_terms: message.requiresTerms,
+            terms_url: message.termsUrl,
+            takes_company: message.takesCompany,
+        }),
+    });
+}
+
+/**
+ * A logo travels inside the JSON as base64 text; raw bytes are written
+ * that way here, text is sent as it was given.
+ */
+export function createLogo(message: Request.CreateLogo): Message {
+    return post('create-logo', {
+        logo: {
+            content: typeof message.content === 'string' ? message.content : Buffer.from(message.content).toString('base64'),
+        },
+    });
+}
+
+export function createTeam(message: Request.CreateTeam): Message {
+    const team = said({
+        name: message.name,
+        timezone: message.timezone,
+        modules: message.modules,
+    });
+
+    return post('create-team', Object.keys(team).length === 0 ? {} : { team });
+}
+
+export function retrieveTeams(message: Request.RetrieveTeams): Message {
+    return post('retrieve-teams', said({
+        slugs: message.slugs,
+        page: message.page,
+        per_page: message.perPage,
+    }));
+}
+
+export function updateTeamModules(message: Request.UpdateTeamModules): Message {
+    return post(`update-team-modules/${token(message.slug)}`, {
+        slug: message.slug,
+        modules: message.modules,
+    });
+}
+
+export function deleteTeam(message: Request.DeleteTeam): Message {
+    return post(`delete-team/${token(message.slug)}`, { slug: message.slug });
 }

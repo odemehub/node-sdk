@@ -1,6 +1,6 @@
 # ödemehub Node.js SDK
 
-ödemehub ödeme geçidini kendi uygulamanızdan kullanmak için hazırlanmış Node.js istemcisi. Kart çekmek, 3D ödeme başlatmak, sipariş, abonelik ve ödeme linki açmak, kart saklamak, iade ve iptal yapmak, taksit sormak, banka hareketlerini okumak: hepsi burada.
+ödemehub ödeme geçidini kendi uygulamanızdan kullanmak için hazırlanmış Node.js istemcisi. Kart çekmek, 3D ödeme başlatmak, sipariş, abonelik ve ödeme linki açmak, kart saklamak, iade ve iptal yapmak, taksit sormak, banka hareketlerini okumak, iş ortağı olarak müşterilerinize çalışma alanı açıp yönetmek: hepsi burada.
 
 İstemci her isteği gizli anahtarınızla imzalar, gelen her yanıtın imzasını doğrular. Siz imza, başlık ya da JSON ayrıntılarıyla uğraşmazsınız. Her uç nokta için bir metot vardır ve adı uç noktanın adıdır: `create-order` için `createOrder()`, `retrieve-saved-cards` için `retrieveSavedCards()`. TypeScript tipleri pakettedir; çalışma zamanı bağımlılığı yoktur.
 
@@ -563,6 +563,59 @@ Sipariş, link ve abonelikte para hareket eden olaylarda `transactionToken` da g
 
 İlk gönderim olaydan 30 saniye sonra yapılır. Geçit 2xx yanıt alana kadar 60 sn, 5 dk, 15 dk ve 30 dk arayla toplam 5 kez dener; yönlendirmeleri izlemez. Adres panelden kapatılır ya da silinirse otomatik gönderimler durur. Denemeleri biten bildirim panelde ilgili kaydın sayfasından elle yeniden gönderilebilir; elle gönderim beklemeden, aynı `id` ve gövdeyle, bildirim kaydındaki adrese gider.
 
+## İş ortakları
+
+ödemehub'ı kendi uygulamanızın arkasında, kendi müşterilerinize açtığınız çalışma alanlarıyla kullanıyorsanız iki anahtarınız vardır. **İş ortağı anahtarı** (panelde Ayarlar → İş Ortaklığı) yalnız çalışma alanlarının kendisi içindir: açmak, sorgulamak, modüllerini değiştirmek, silmek. Çalışma alanının içindeki her iş (ödeme hesabı, webhook adresi, ödeme sayfası, ödemeler) o çalışma alanının kendi anahtarıyla, sıradan `Client` üzerinden yapılır; `createTeam()` ve `retrieveTeams()` bu anahtarları verir.
+
+```ts
+import { readFile } from 'node:fs/promises';
+import { PartnerClient } from '@odemehub/node-sdk';
+
+const partner = new PartnerClient({
+    baseUrl: 'https://sandbox.odemehub.com',
+    apiKey: process.env.ODEMEHUB_PARTNER_API_KEY!,
+    apiSecret: process.env.ODEMEHUB_PARTNER_API_SECRET!,
+});
+
+const { team } = await partner.createTeam({
+    name: 'Kuzey Kafe',
+    timezone: 'Europe/Istanbul',
+    modules: ['api', 'orders', 'bank_transactions'],
+});
+team.slug;                                    // 1000000042, çalışma alanının numarası
+team.apiKey;                                  // çalışma alanının kendi anahtarları: saklayın
+team.apiSecret;
+team.gatewayUrl;                              // https://sandbox.odemehub.com/api/1000000042/gateway
+
+const client = partner.teamClient(team);      // aynı baseUrl, team = slug, çalışma alanının anahtarları
+
+const { paymentProvider } = await client.createPaymentProvider({
+    provider: 'iyzico',                       // retrieveProviders() yanıtındaki id
+    name: 'iyzico',
+    settings: { test_api_key: '...', test_api_secret: '...' }, // fields'taki key'ler, testinki test_ önekiyle
+});
+
+await client.createWebhookEndpoint({
+    url: 'https://ornek.com/odemehub/webhook',
+    events: ['order.paid', 'transaction.successful'],
+});
+
+const { url } = await client.createLogo({ content: await readFile('logo.png') }); // bayt ya da base64
+await client.updateCheckoutDesign({ logo: url, accentColor: '#0f766e', submitType: 'pay' });
+```
+
+Çalışma alanları `retrieveTeams({ slugs, page, perPage })` ile sorgulanır (yanıtta `pagination`), `updateTeamModules({ slug, modules })` çalışma alanını tam olarak gönderilen modüllerle bırakır (boş liste hepsini kapatır), `deleteTeam({ slug })` içindekilerle birlikte kalıcı olarak siler; anahtarları anında geçersiz olur. Modüller: `api`, `orders`, `subscription`, `payment_links`, `saved_cards`, `bank_transactions`; `custom_domain` ve `shopify_pos` yanıtta görünebilir ama gönderilirse `ValidationError` döner. Sandbox'ta her modül açıktır: `createTeam()` `modules`'u yok sayar, `updateTeamModules()` `ForbiddenError` döner. Sizin açmadığınız bir çalışma alanının slug'ı `NotFoundError` verir. Çalışma alanı sınırınız doluysa `createTeam()` `team` alanında `ValidationError` döner.
+
+Aşağıdaki uçlar **yalnız iş ortağının açtığı çalışma alanlarında** çalışır; başka bir çalışma alanı `ForbiddenError` alır:
+
+- Ödeme hesapları: `retrieveProviders()` (hesap eklenebilecek sağlayıcılar ve istedikleri `fields`), `createPaymentProvider()`, `retrievePaymentProviders({ tokens })`, `updatePaymentProvider({ token, name, settings, isDefault: true })`, `deletePaymentProvider({ token })`. Her ayar iki kez sorulur, testinki `test_` önekiyle; yalnız çalışma alanının çalıştığı ortamınkiler zorunludur. Ayarlar hiçbir yanıtta dönmez. Bağlantı denenmez; ilk ödeme dener. Gate kuralının kullandığı hesap silinmez (`ValidationError`).
+- Webhook adresleri: `createWebhookEndpoint({ url, events, isActive })`, `retrieveWebhookEndpoints({ tokens })`, `updateWebhookEndpoint({ token, ... })`, `deleteWebhookEndpoint({ token })`. Bildirimler çalışma alanının kendi gizli anahtarıyla imzalanır.
+- Çalışma alanı ve ödeme sayfası: `updateTeam({ name, timezone })`, `retrieveCheckoutDesign()`, `updateCheckoutDesign({ ... })` (yalnız gönderilen değişir; `logo: null` ve `termsUrl: null` kaldırır), `createLogo({ content })` (JPG, PNG ya da WEBP; en çok 2 MB ve 3000 piksel; dönen `url` tasarımda `logo` olarak verilir).
+
+Ödeme hesabı (`Response.PaymentProvider`): `token`, `name`, `provider`, `isDefault`, `createdAt`. Webhook adresi (`Response.WebhookEndpoint`): `token`, `url`, `events`, `isActive`, `createdAt`. Ödeme sayfası (`Response.CheckoutDesign`): `logo`, `layout`, `isReversed`, `summaryColor`, `accentColor`, `font`, `formStyle`, `takesCoupons`, `offersShippingMethods`, `submitType`, `paymentMethodStyle`, `requiresTerms`, `termsUrl`, `takesCompany`. İş ortağının çalışma alanı (`Response.PartnerTeam`): `slug`, `name`, `timezone`, `isTest`, `modules`, `gatewayUrl`, `apiKey`, `apiSecret`, `createdAt`.
+
+İş ortağı uçları iş ortağı başına dakikada 60 istek alır; `createLogo()` ayrıca dakikada 30 ile sınırlıdır.
+
 ## Sabit değerler
 
 Sabit değer kümeleri string-literal union tipleridir ve paketten dışa açılır: `Currency`, `Period`, `OrderStatus`, `SubscriptionStatus`, `LinkPaymentStatus`, `AmountType`, `CurrencyType`, `TaxMode`, `TransactionStatus`, `PaymentStatus`, `SecurityType`, `RefundType`, `CardScheme`, `CardType`, `WebhookEvent`.
@@ -582,8 +635,8 @@ Bütün hatalar `OdemehubError`'dan türer; tek bir `instanceof` kontrolü hepsi
 | Hata | Durum | Anlamı |
 | --- | --- | --- |
 | `AuthenticationError` | 401 | API anahtarı yanlış, imza tutmuyor ya da zaman damgası aralık dışında |
-| `ForbiddenError` | 403 | Çalışma alanı işlem yapamıyor (ödenmemiş bakiye) ya da ucun modülü kapalı; açtırmak için bizimle iletişime geçin |
-| `NotFoundError` | 404 | Token'ıyla güncellenmek, silinmek, iade ya da iptal edilmek istenen kayıt çalışma alanınızın değil (`updateBankAccount` ve `deleteBankAccount` dahil). Sorgular (token, referans ya da tarihle) bulunamayan kayıtta hata fırlatmaz, boş liste döner |
+| `ForbiddenError` | 403 | Çalışma alanı işlem yapamıyor (ödenmemiş bakiye) ya da ucun modülü kapalı; açtırmak için bizimle iletişime geçin. İş ortağı uçları başka bir çalışma alanında da bunu döner |
+| `NotFoundError` | 404 | Token'ıyla güncellenmek, silinmek, iade ya da iptal edilmek istenen kayıt çalışma alanınızın değil (`updateBankAccount` ve `deleteBankAccount` dahil); `PartnerClient`'ta slug'ı verilen çalışma alanı sizin açtığınız değil. Sorgular (token, referans ya da tarihle) bulunamayan kayıtta hata fırlatmaz, boş liste döner |
 | `ValidationError` | 422 | Alan hataları; `error.errors` noktalı alan adıyla (`transaction.amount`, `order.items.0.name`) |
 | `RateLimitError` | 429 | İstek sınırı; `error.retryAfter` saniye |
 | `SignatureError` | — | Yanıtın ya da webhook'un imzası doğrulanamadı; içeriğe güvenmeyin |
@@ -611,6 +664,15 @@ Reddedilen ödeme, iade ya da kart saklama hata değildir; `result.successful` f
 ## İstek sınırları
 
 Sınırlar çalışma alanı başına ve dakikalıktır: bütün uçlar için toplam 300 istek; para hareket ettiren uçlar (`secure-payment`, `regular-payment`, `refund-payment`, `cancel-payment`, `create-saved-card`, `delete-saved-card`) için ayrıca 60 istek. Banka hareketleri uçları yalnızca genel sınıra girer. Sınır aşılırsa `RateLimitError` fırlatılır; `retryAfter` saniye bekleyip yeniden deneyin.
+
+## 1.0.8'deki değişiklikler
+
+Eklenenler:
+
+- **İş ortağı istemcisi:** yeni `PartnerClient` (`PartnerOptions`: `baseUrl`, `apiKey`, `apiSecret`, `timeout`, `fetch`; `team` yok) ve `createTeam()`, `retrieveTeams()`, `updateTeamModules()`, `deleteTeam()` metotları; `teamClient(team)` çalışma alanının `Client`'ını kurar. Yeni `Request.CreateTeam`, `Request.RetrieveTeams`, `Request.UpdateTeamModules`, `Request.DeleteTeam` istekleri ve `Response.PartnerTeamDetails`, `Response.PartnerTeamList` (`PartnerTeam`, `Pagination`), `Response.DeletedTeam` modelleri.
+- **Yalnız iş ortağı çalışma alanlarına açık uçlar:** `Client`'ta yeni `retrieveProviders()`, `createPaymentProvider()`, `retrievePaymentProviders()`, `updatePaymentProvider()`, `deletePaymentProvider()`, `createWebhookEndpoint()`, `retrieveWebhookEndpoints()`, `updateWebhookEndpoint()`, `deleteWebhookEndpoint()`, `updateTeam()`, `retrieveCheckoutDesign()`, `updateCheckoutDesign()` ve `createLogo()`; istekleri `Request` altında aynı adlarla, yanıtları `Response.ProviderList` (`Provider`, `ProviderField`), `PaymentProviderDetails`, `PaymentProviderList`, `DeletedPaymentProvider` (`PaymentProvider`), `WebhookEndpointDetails`, `WebhookEndpointList`, `DeletedWebhookEndpoint` (`WebhookEndpoint`), `TeamDetails` (`Team`), `CheckoutDesignDetails` (`CheckoutDesign`) ve `LogoDetails`. Başka bir çalışma alanında `ForbiddenError` döner.
+
+Var olan çağrılar değişmeden çalışır; kırıcı değişiklik yok.
 
 ## 1.0.7'deki değişiklikler
 
